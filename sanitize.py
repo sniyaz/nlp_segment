@@ -28,7 +28,7 @@ def create_parser():
         metavar='PATH',
         help="Input file (default: standard input).")
     parser.add_argument(
-        '--output', '-o', type=argparse.FileType('a+'), default=sys.stdout,
+        '--output', '-o', type=argparse.FileType('w+'), default=sys.stdout,
         metavar='PATH',
         help="Output file (default: standard output)")
 
