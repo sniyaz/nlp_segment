@@ -57,13 +57,14 @@ def get_segmentations(word_in):
     return word_segmentations
 
 def get_vocabulary(fobj):
-    """Read text and return dictionary that encodes vocabulary
+    """Set up our data structures...
     """
     fobj.seek(0)
     vocab = Counter()
     for line in fobj:
         for word in line.split():
             vocab[word] += 1
+
     return vocab
 
 
@@ -82,43 +83,85 @@ def check_common_substring(seg1, seg2):
     return False
 
 
+def get_similarity_score(seg_in):
+    original_word = "".join(seg_in)
+    score = 0
+    seen = set()
+    for i in range(len(seg_in) - 1):
+        head = seg_in[i]
+        #What other words also contain the head?
+        if head not in quick_find:
+            continue
+        other_words = quick_find[head]
+        for word, idx in other_words:
+            if word in seen or word == original_word:
+                continue
+            #Is this component involved in a substring?
+            if idx + 1 >= len(segmentations[word]):
+                continue
+            if segmentations[word][idx + 1] == seg_in[i+1]:
+                score += get_similarity(original_word, word)
+                seen.add(word)
+
+    return score
+
+
+
 if __name__ == '__main__':
     #Main hyperparameter!
-    gamma = 0
+    gamma = 1
 
     parser = create_parser()
     args = parser.parse_args()
     word_vectors = pickle.load(args.vectors)
     segmentations = {}
-    #Set up initial dict of segmentations...
-    for line in args.input:
-        contents = line.split()
-        for word in contents:
-            if word not in segmentations:
-                segmentations[word] = list(word)
-
-    vocab = get_vocabulary(args.input)
     
+    #Dict that maps characters to words containing them (for speed)
+    quick_find = {}
+    vocab = get_vocabulary(args.input)
+
+    #Each words starts totally segmented..
+    for word in vocab:
+        segmentations[word] = list(word)
+        for idx, c in enumerate(word):
+            if c not in quick_find:
+                quick_find[c] = set([(word, idx)])
+            else:
+                quick_find[c].add((word, idx))
+    
+    i = 0
     #Core algorithm
     for word, freq in vocab.items():
+        print(i)
+        print(word)
+
         lowest_cost = float("inf")
         best_seg = None
         candidate_segs = get_segmentations(word)
 
         for seg in candidate_segs:
             cost = freq*len(seg)
-            total_similarity = 0
-            for other_word, other_seg in segmentations.items():
-                if check_common_substring(seg, other_seg):
-                    total_similarity += get_similarity(word, other_word)
             #Incorperates the similarity part of the cost function.
-            cost -= gamma*total_similarity
+            cost -= gamma*get_similarity_score(seg)
 
-            if cost < lowest_cost:
+            if cost < lowest_cost: 
                 lowest_cost = cost
                 best_seg = seg
 
         segmentations[word] = best_seg
+        #Update that quick find data_structure!
+        for idx, part in enumerate(best_seg):
+            if part not in quick_find:
+                quick_find[part] = set([(word, idx)])
+            else:
+                part_set = quick_find[part]
+                part_set.add((word, idx))
+
+        for idx, c in enumerate(word):
+            quick_find[c].remove((word, idx))
+
+        i += 1
+      
 
     #Write the word segmentations to the output file
     for word, final_seg in segmentations.items():
