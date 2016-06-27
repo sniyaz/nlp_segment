@@ -9,6 +9,9 @@ from collections import defaultdict, Counter
 import numpy as np
 import pickle
 from itertools import combinations
+from random import shuffle
+
+import pdb
 
 # hack for python2/3 compatibility
 from io import open
@@ -63,6 +66,9 @@ def get_vocabulary(fobj):
     vocab = Counter()
     for line in fobj:
         for word in line.split():
+            #HACK since we don't have the similarity net yet...
+            if word not in word_vectors:
+                continue
             vocab[word] += 1
 
     return vocab
@@ -83,33 +89,43 @@ def check_common_substring(seg1, seg2):
     return False
 
 
-def get_similarity_score(seg_in):
-    original_word = "".join(seg_in)
-    score = 0
-    seen = set()
-    for i in range(len(seg_in) - 1):
-        head = seg_in[i]
-        #What other words also contain the head?
-        if head not in quick_find:
-            continue
-        other_words = quick_find[head]
-        for word, idx in other_words:
-            if word in seen or word == original_word:
-                continue
-            #Is this component involved in a substring?
-            if idx + 1 >= len(segmentations[word]):
-                continue
-            if segmentations[word][idx + 1] == seg_in[i+1]:
-                score += get_similarity(original_word, word)
-                seen.add(word)
+def get_next_seg(candidate_segs):
+    best_seg = None
+    original_word = "".join(candidate_segs[0])
+    lowest_cost = float("inf")
+    #Memoization table that maps segments to their score. Intractability is bad.
+    memoized = {}
 
-    return score
+    for seg in candidate_segs:
+        cost = vocab[original_word]*len(seg)
+        func_seg = 0;
+        for part in seg:
+            if part in memoized:
+                func_seg += memoized[part]
+            elif part not in quick_find:
+                memoized[part] = 0
+            else:
+                shared = quick_find[part]
+                func_part = 0
+                for other in shared:
+                    func_part += get_similarity(original_word, other[0])
+                func_seg += func_part
+                memoized[part] = func_part
 
+        #Incorperates the similarity part of the cost function.
+        cost -= gamma*func_seg
 
+        if cost < lowest_cost: 
+            lowest_cost = cost
+            best_seg = seg
+    
+    return best_seg
+
+            
 
 if __name__ == '__main__':
     #Main hyperparameter!
-    gamma = 1
+    gamma = 0.01
 
     parser = create_parser()
     args = parser.parse_args()
@@ -120,7 +136,10 @@ if __name__ == '__main__':
     quick_find = {}
     vocab = get_vocabulary(args.input)
 
+
+
     #Each words starts totally segmented..
+    #By the way, I'm keeping index information in the quick find dict just in case...
     for word in vocab:
         segmentations[word] = list(word)
         for idx, c in enumerate(word):
@@ -128,28 +147,30 @@ if __name__ == '__main__':
                 quick_find[c] = set([(word, idx)])
             else:
                 quick_find[c].add((word, idx))
+
+    print("SIZE QUICK FIND")
+    print(len(quick_find.keys()))
+
+    print("SIZE VOCAB")
+    print(len(vocab.keys()))
     
     i = 0
     #Core algorithm
-    for word, freq in vocab.items():
+    #Traverse words in random order
+    word_list = [word for word in vocab]
+    shuffle(word_list)
+    for word in word_list:
         print(i)
         print(word)
 
-        lowest_cost = float("inf")
-        best_seg = None
         candidate_segs = get_segmentations(word)
-
-        for seg in candidate_segs:
-            cost = freq*len(seg)
-            #Incorperates the similarity part of the cost function.
-            cost -= gamma*get_similarity_score(seg)
-
-            if cost < lowest_cost: 
-                lowest_cost = cost
-                best_seg = seg
+        best_seg = get_next_seg(candidate_segs)
 
         segmentations[word] = best_seg
         #Update that quick find data_structure!
+        for idx, c in enumerate(word):
+            quick_find[c].remove((word, idx))
+
         for idx, part in enumerate(best_seg):
             if part not in quick_find:
                 quick_find[part] = set([(word, idx)])
@@ -157,14 +178,13 @@ if __name__ == '__main__':
                 part_set = quick_find[part]
                 part_set.add((word, idx))
 
-        for idx, c in enumerate(word):
-            quick_find[c].remove((word, idx))
-
         i += 1
-      
 
+        
+      
     #Write the word segmentations to the output file
-    for word, final_seg in segmentations.items():
+    for word in word_list:
+        final_seg = segmentations[word]
         delimited_seg = " ".join(final_seg)
         args.output.write(delimited_seg)
         args.output.write('\n')

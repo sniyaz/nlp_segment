@@ -6,6 +6,7 @@ import argparse
 import string
 from collections import defaultdict
 
+import re
 
 # hack for python2/3 compatibility
 from io import open
@@ -40,14 +41,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     for line in args.input:
-        contents = line.split()
-        new_contents = []
-        for word in contents:
-           new_word = word.encode('utf-8').translate(None, string.punctuation)
-           new_word = new_word.lower()
-           new_word = new_word.decode('utf-8')
-           new_contents.append(new_word)
-        new_line = " ".join(new_contents)
-        args.output.write(new_line)
+
+        letters_only = re.sub("[^a-zA-Z]", " ", line)
+        lower_case = letters_only.lower()
+        lower_case = lower_case.split()
+        new_sentence = [w for w in lower_case if len(w) > 1]
+        args.output.write(" ".join(new_sentence))
         args.output.write('\n')
 
