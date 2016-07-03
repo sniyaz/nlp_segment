@@ -139,7 +139,6 @@ if __name__ == '__main__':
 
 
     #Each words starts totally segmented..
-    #By the way, I'm keeping index information in the quick find dict just in case...
     for word in vocab:
         segmentations[word] = list(word)
         for idx, c in enumerate(word):

@@ -45,7 +45,7 @@ if __name__ == '__main__':
         letters_only = re.sub("[^a-zA-Z]", " ", line)
         lower_case = letters_only.lower()
         lower_case = lower_case.split()
-        new_sentence = [w for w in lower_case if len(w) > 1]
+        new_sentence = [w for w in lower_case if len(w) > 1 and " " not in w]
         args.output.write(" ".join(new_sentence))
         args.output.write('\n')
 
