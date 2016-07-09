@@ -89,6 +89,7 @@ def check_common_substring(seg1, seg2):
 
 
 
+#Is merging a pair worth it?
 def get_pair_action(pair):
     involved_words = quick_pairs[pair]
     #We only calculate the change in cost for computational reasons
@@ -121,32 +122,28 @@ def get_pair_action(pair):
 def merge_update(pair):
     new_symbol = "".join(pair)
     for word, first_index, second_index in quick_pairs[pair]:
-        #Remove the offending word from the quick_find data structure
+        #Remove the mapping of the word and old symbols from the quick_find structure
         quick_find[pair[0]].remove((word, first_index))
         quick_find[pair[1]].remove((word, second_index))
-        #Update q_find data structure
+        #Update q_find data structure with new symbol
         if new_symbol not in quick_find:
             quick_find[new_symbol] = set([(word, first_index)])
         else:
             quick_find[new_symbol].add((word, first_index))
 
-        #Delete old info from the pairs data structure (from pairs on a boundary with the current) 
+        #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
         if second_index + 1 < len(segmentations[word]):
             quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
-        if first_index - 1 >= 0:
-            #DEBUG HACKERY!
-            if (word, first_index - 1, first_index) not in quick_pairs[(segmentations[word][first_index - 1], pair[0])]:
-                pdb.set_trace()
+        if first_index - 1 >= 0: 
             quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
         
         #Update segmentations data structure 
         segmentations[word][first_index] = new_symbol
         segmentations[word].pop(second_index)
 
-        #Update the pairs data structure with new info 
+        #Update the pairs data structure with new pairs formed with new symbol 
         if second_index < len(segmentations[word]):
-            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:
-                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
+            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
             else:
                 quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
 
@@ -155,6 +152,15 @@ def merge_update(pair):
                 quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
             else:
                 quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+
+        #Now, move the indicies for things after the merged pair!
+        for i in range(second_index, len(segmentations[word])):
+            quick_find[segmentations[word][i]].remove((word, i + 1))
+            quick_find[segmentations[word][i]].add((word, i))
+            if i + 1 < len(segmentations[word]):
+                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+
     
     #One last thing now that we're done...
     quick_pairs.pop(pair)
@@ -210,8 +216,6 @@ if __name__ == '__main__':
     print(len(vocab.keys()))
 
 
-    #pdb.set_trace()
-    
     num_iterations = 1000
     #Core algorithm
     #Traverse pairs in random order and decide whether to merge
@@ -229,7 +233,6 @@ if __name__ == '__main__':
         merge_pair = True
         if merge_pair:
             merge_update(cur_pair)
-            #pdb.set_trace()
 
             
 
