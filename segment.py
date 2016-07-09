@@ -5,6 +5,7 @@ import codecs
 import argparse
 import string
 from collections import defaultdict, Counter
+from random import randint
 
 import numpy as np
 import pickle
@@ -75,8 +76,6 @@ def get_vocabulary(fobj):
 
 
 def get_similarity(word1, word2):
-    if (word1 not in word_vectors) or (word2 not in word_vectors):
-        return 0
     return np.dot(word_vectors[word1], word_vectors[word2])
 
 
@@ -89,43 +88,84 @@ def check_common_substring(seg1, seg2):
     return False
 
 
-def get_next_seg(candidate_segs):
-    best_seg = None
-    original_word = "".join(candidate_segs[0])
-    lowest_cost = float("inf")
-    #Memoization table that maps segments to their score. Intractability is bad.
-    memoized = {}
 
-    for seg in candidate_segs:
-        cost = vocab[original_word]*len(seg)
-        func_seg = 0;
-        for part in seg:
-            if part in memoized:
-                func_seg += memoized[part]
-            elif part not in quick_find:
-                memoized[part] = 0
+def get_pair_action(pair):
+    involved_words = quick_pairs[pair]
+    #We only calculate the change in cost for computational reasons
+    cost_delta = 0
+    for word, first_index, second_index in involved_words:
+        #On a merge, the length goes down by one. Reflect the first term of the cost function
+        cost_delta -= vocab[word]
+        #"Undo" the contributions to the second part of the cost function
+        for other_word, index in quick_find[pair[0]]:
+            #Hack to prevent a third calculation from the new symbol
+            if (other_word, index, index + 1) in involved_words:
+                continue
+            if (word, pair[0]) in memoized_scores:
+                cost_delta += gamma*memoized_scores[(word, pair[0])]
             else:
-                shared = quick_find[part]
-                func_part = 0
-                for other in shared:
-                    func_part += get_similarity(original_word, other[0])
-                func_seg += func_part
-                memoized[part] = func_part
+                cost_delta += gamma*get_similarity(word, other_word)
+                memoized_scores[(word, pair[0])] = get_similarity(word, other_word)
+        for other_word, index in quick_find[pair[1]]:
+            if (word, pair[1]) in memoized_scores:
+                cost_delta += gamma*memoized_scores[(word, pair[1])]
+            else:
+                cost_delta += gamma*get_similarity(word, other_word)
+                memoized_scores[(word, pair[1])] = get_similarity(word, other_word)
+        
+        
+    return cost_delta < 0
 
-        #Incorperates the similarity part of the cost function.
-        cost -= gamma*func_seg
 
-        if cost < lowest_cost: 
-            lowest_cost = cost
-            best_seg = seg
+
+def merge_update(pair):
+    new_symbol = "".join(pair)
+    for word, first_index, second_index in quick_pairs[pair]:
+        #Remove the offending word from the quick_find data structure
+        quick_find[pair[0]].remove((word, first_index))
+        quick_find[pair[1]].remove((word, second_index))
+        #Update q_find data structure
+        if new_symbol not in quick_find:
+            quick_find[new_symbol] = set([(word, first_index)])
+        else:
+            quick_find[new_symbol].add((word, first_index))
+
+        #Delete old info from the pairs data structure (from pairs on a boundary with the current) 
+        if second_index + 1 < len(segmentations[word]):
+            quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+        if first_index - 1 >= 0:
+            #DEBUG HACKERY!
+            if (word, first_index - 1, first_index) not in quick_pairs[(segmentations[word][first_index - 1], pair[0])]:
+                pdb.set_trace()
+            quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+        
+        #Update segmentations data structure 
+        segmentations[word][first_index] = new_symbol
+        segmentations[word].pop(second_index)
+
+        #Update the pairs data structure with new info 
+        if second_index < len(segmentations[word]):
+            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:
+                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
+            else:
+                quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+
+        if first_index - 1 >= 0:
+            if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
+                quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
+            else:
+                quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
     
-    return best_seg
+    #One last thing now that we're done...
+    quick_pairs.pop(pair)
 
-            
+
+    
+
 
 if __name__ == '__main__':
     #Main hyperparameter!
-    gamma = 0.01
+    gamma = 0.3
 
     parser = create_parser()
     args = parser.parse_args()
@@ -134,55 +174,68 @@ if __name__ == '__main__':
     
     #Dict that maps characters to words containing them (for speed)
     quick_find = {}
+    #Dict that maps pairs to words containing them (for speed)
+    quick_pairs = {}
     vocab = get_vocabulary(args.input)
-
-
+    #Map word and part to a score for memoization
+    memoized_scores = {}
 
     #Each words starts totally segmented..
+    #Set up to the data structures
     for word in vocab:
+        #Set up segmentations data structure
         segmentations[word] = list(word)
+        #Set up the quick_find data structure
         for idx, c in enumerate(word):
             if c not in quick_find:
                 quick_find[c] = set([(word, idx)])
             else:
                 quick_find[c].add((word, idx))
+            #Now set up the quick_pairs data structure
+            if idx != len(word) - 1:
+                if (c, word[idx+1]) not in quick_pairs:
+                    quick_pairs[(c, word[idx+1])] = set([(word, idx, idx+1)])
+                else:
+                    quick_pairs[(c, word[idx+1])].add((word, idx, idx+1))
+
+
 
     print("SIZE QUICK FIND")
     print(len(quick_find.keys()))
 
+    print("SIZE QUICK PAIRS")
+    print(len(quick_pairs.keys()))
+
     print("SIZE VOCAB")
     print(len(vocab.keys()))
+
+
+    #pdb.set_trace()
     
-    i = 0
+    num_iterations = 1000
     #Core algorithm
-    #Traverse words in random order
-    word_list = [word for word in vocab]
-    shuffle(word_list)
-    for word in word_list:
+    #Traverse pairs in random order and decide whether to merge
+    seen = set()
+    for i in range(num_iterations):
         print(i)
-        print(word)
+        operation = randint(0, len(quick_pairs) - 1)
+        cur_pair = list(quick_pairs.keys())[operation]
+        if cur_pair in seen:
+            continue
+        else:
+            seen.add(cur_pair)
+        merge_pair = get_pair_action(cur_pair)
+        #DEBUG HACK!!!
+        merge_pair = True
+        if merge_pair:
+            merge_update(cur_pair)
+            #pdb.set_trace()
 
-        candidate_segs = get_segmentations(word)
-        best_seg = get_next_seg(candidate_segs)
+            
 
-        segmentations[word] = best_seg
-        #Update that quick find data_structure!
-        for idx, c in enumerate(word):
-            quick_find[c].remove((word, idx))
 
-        for idx, part in enumerate(best_seg):
-            if part not in quick_find:
-                quick_find[part] = set([(word, idx)])
-            else:
-                part_set = quick_find[part]
-                part_set.add((word, idx))
-
-        i += 1
-
-        
-      
     #Write the word segmentations to the output file
-    for word in word_list:
+    for word in vocab:
         final_seg = segmentations[word]
         delimited_seg = " ".join(final_seg)
         args.output.write(delimited_seg)
@@ -201,6 +254,7 @@ if __name__ == '__main__':
 
 
         
+
 
 
 
