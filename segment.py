@@ -11,6 +11,7 @@ import numpy as np
 import pickle
 from itertools import combinations
 from random import shuffle
+import copy
 
 import pdb
 
@@ -120,50 +121,60 @@ def get_pair_action(pair):
 
 
 def merge_update(pair):
-    new_symbol = "".join(pair)
-    for word, first_index, second_index in quick_pairs[pair]:
-        #Remove the mapping of the word and old symbols from the quick_find structure
-        quick_find[pair[0]].remove((word, first_index))
-        quick_find[pair[1]].remove((word, second_index))
-        #Update q_find data structure with new symbol
-        if new_symbol not in quick_find:
-            quick_find[new_symbol] = set([(word, first_index)])
-        else:
-            quick_find[new_symbol].add((word, first_index))
+    try:
+        new_symbol = "".join(pair)
+        involved_words = quick_pairs[pair]
+        #Edge cases can have you change the set as you iterate over it!
+        while involved_words:
+            word, first_index, second_index = involved_words.pop()
+            #Remove the mapping of the word and old symbols from the quick_find structure
+            quick_find[pair[0]].remove((word, first_index))
+            quick_find[pair[1]].remove((word, second_index))
+            #Update q_find data structure with new symbol
+            if new_symbol not in quick_find:
+                quick_find[new_symbol] = set([(word, first_index)])
+            else:
+                quick_find[new_symbol].add((word, first_index))
 
-        #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
-        if second_index + 1 < len(segmentations[word]):
-            quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
-        if first_index - 1 >= 0: 
-            quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+            #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
+            if second_index + 1 < len(segmentations[word]):
+                quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+            if first_index - 1 >= 0: 
+                quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+            
+            #Update segmentations data structure 
+            segmentations[word][first_index] = new_symbol
+            segmentations[word].pop(second_index)
+
+            #Update the pairs data structure with new pairs formed with new symbol 
+            if second_index < len(segmentations[word]):
+                if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
+                else:
+                    quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+
+            if first_index - 1 >= 0:
+                if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
+                    quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
+                else:
+                    quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+
+            #Now, move the indicies for things after the merged pair!
+            for i in range(second_index, len(segmentations[word])):
+                quick_find[segmentations[word][i]].remove((word, i + 1))
+                quick_find[segmentations[word][i]].add((word, i))
+                if i + 1 < len(segmentations[word]):
+                    quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+                    quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+
         
-        #Update segmentations data structure 
-        segmentations[word][first_index] = new_symbol
-        segmentations[word].pop(second_index)
-
-        #Update the pairs data structure with new pairs formed with new symbol 
-        if second_index < len(segmentations[word]):
-            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
-            else:
-                quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
-
-        if first_index - 1 >= 0:
-            if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
-                quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
-            else:
-                quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
-
-        #Now, move the indicies for things after the merged pair!
-        for i in range(second_index, len(segmentations[word])):
-            quick_find[segmentations[word][i]].remove((word, i + 1))
-            quick_find[segmentations[word][i]].add((word, i))
-            if i + 1 < len(segmentations[word]):
-                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
-                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
-
-    
-    #One last thing now that we're done...
-    quick_pairs.pop(pair)
+        #One last thing now that we're done...
+        quick_pairs.pop(pair)
+    except Exception as e:
+        print("Starting debug output")
+        print(type(e))
+        print(e.args)
+        print(e)
+        pdb.set_trace()
 
 
     
