@@ -12,6 +12,7 @@ import pickle
 from itertools import combinations
 from random import shuffle
 import copy
+import operator
 
 import pdb
 
@@ -91,7 +92,9 @@ def check_common_substring(seg1, seg2):
 
 
 #Is merging a pair worth it?
-def get_pair_action(pair):
+def get_pair_delta(pair):
+    if pair in memo_deltas:
+        return memo_deltas[pair]
     involved_words = quick_pairs[pair]
     #We only calculate the change in cost for computational reasons
     cost_delta = 0
@@ -103,20 +106,12 @@ def get_pair_action(pair):
             #Hack to prevent a third calculation from the new symbol
             if (other_word, index, index + 1) in involved_words:
                 continue
-            if (word, pair[0]) in memoized_scores:
-                cost_delta += gamma*memoized_scores[(word, pair[0])]
-            else:
-                cost_delta += gamma*get_similarity(word, other_word)
-                memoized_scores[(word, pair[0])] = get_similarity(word, other_word)
+            cost_delta += gamma*get_similarity(word, other_word)
         for other_word, index in quick_find[pair[1]]:
-            if (word, pair[1]) in memoized_scores:
-                cost_delta += gamma*memoized_scores[(word, pair[1])]
-            else:
-                cost_delta += gamma*get_similarity(word, other_word)
-                memoized_scores[(word, pair[1])] = get_similarity(word, other_word)
+            cost_delta += gamma*get_similarity(word, other_word)
         
-        
-    return cost_delta < 0
+    memo_deltas[pair] = cost_delta
+    return cost_delta
 
 
 
@@ -194,8 +189,6 @@ if __name__ == '__main__':
     #Dict that maps pairs to words containing them (for speed)
     quick_pairs = {}
     vocab = get_vocabulary(args.input)
-    #Map word and part to a score for memoization
-    memoized_scores = {}
 
     #Each words starts totally segmented..
     #Set up to the data structures
@@ -226,28 +219,31 @@ if __name__ == '__main__':
     print("SIZE VOCAB")
     print(len(vocab.keys()))
 
+    #Memoize deltas for certain pairs 
+    memo_deltas = {}
 
-    num_iterations = 1000
+
+    num_iterations = 5000
     #Core algorithm
-    #Traverse pairs in random order and decide whether to merge
-    seen = set()
     for i in range(num_iterations):
         print(i)
-        operation = randint(0, len(quick_pairs) - 1)
-        cur_pair = list(quick_pairs.keys())[operation]
-        if cur_pair in seen:
-            continue
-        else:
-            seen.add(cur_pair)
-        merge_pair = get_pair_action(cur_pair)
-        #DEBUG HACK!!!
-        merge_pair = True
-        if merge_pair:
-            merge_update(cur_pair)
+        #Look at 100 merges, and then pick the best one
+        search_scatter = 20
+        pairs = list(quick_pairs.keys())
+        operations = [randint(0, len(pairs) - 1) for i in range(search_scatter)]
+        deltas = [get_pair_delta(pairs[i]) for i in operations]
+        best_index, best_delta = min(enumerate(deltas), key=operator.itemgetter(1))        
+        best_pair = pairs[operations[best_index]]
+        merge_update(best_pair)
+
+        #Purge the cache of deltas that are no longer accurate
+        for pair in list(memo_deltas.keys()):
+            if best_pair[0] in pair or best_pair[1] in pair:
+                memo_deltas.pop(pair)
+
+        
 
             
-
-
     #Write the word segmentations to the output file
     for word in vocab:
         final_seg = segmentations[word]
