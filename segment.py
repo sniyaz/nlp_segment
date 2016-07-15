@@ -90,103 +90,122 @@ def check_common_substring(seg1, seg2):
     return False
 
 
-
-#Is merging a pair worth it?
-def get_pair_delta(pair):
-    if pair in memo_deltas:
-        return memo_deltas[pair]
-    involved_words = quick_pairs[pair]
-    #We only calculate the change in cost for computational reasons
+#Is merging a pair worth it? Use a sampling approach to decide...
+def sample_pair_delta(pair):
+    involved_words = [i[0] for i in quick_pairs[pair]]
+    #We only SAMPLE the change in cost for computational reasons
     cost_delta = 0
-    for word, first_index, second_index in involved_words:
+    for word in involved_words:
         #On a merge, the length goes down by one. Reflect the first term of the cost function
         cost_delta -= vocab[word]
         #"Undo" the contributions to the second part of the cost function
-        for other_word, index in quick_find[pair[0]]:
-            #Hack to prevent a third calculation from the new symbol
-            if (other_word, index, index + 1) in involved_words:
-                continue
-            cost_delta += gamma*get_similarity(word, other_word)
-        for other_word, index in quick_find[pair[1]]:
-            cost_delta += gamma*get_similarity(word, other_word)
-        
-    memo_deltas[pair] = cost_delta
+        cost_delta += gamma*sample_average_distance(word, quick_find[pair[0]])
+        cost_delta += gamma*sample_average_distance(word, quick_find[pair[1]])
+        #But there are new negative terms.
+        cost_delta -= gamma*sample_average_distance(word, quick_pairs[pair])
+            
     return cost_delta
 
 
+def sample_average_distance(target_word, sample_set):
+    sampled_words = sample_words(sample_set)
+    if not sampled_words:
+        return 0
+    
+    average = None
+    for sample in sampled_words:
+        if  average is None:
+            average = word_vectors[sample[0]]
+        else:
+            #We only care about the word in the tuple
+            average = average + word_vectors[sample[0]]
+           
+    average = average/len(sampled_words)
+    difference = word_vectors[target_word] - average
+    return np.linalg.norm(difference)
+
+
+def sample_words(sample_set):
+    sampled_words = []
+    for i in range(sample_size):
+        if not sample_set:
+            break
+        sample = sample_set.pop()
+        sampled_words.append(sample)
+    
+    #We also want to RETURN the items to the set..
+    for sample in sampled_words:
+        sample_set.add(sample)
+        
+    return sampled_words
+
 
 def merge_update(pair):
-    try:
-        new_symbol = "".join(pair)
-        involved_words = quick_pairs[pair]
-        #Edge cases can have you change the set as you iterate over it!
-        while involved_words:
-            word, first_index, second_index = involved_words.pop()
-            #Remove the mapping of the word and old symbols from the quick_find structure
-            quick_find[pair[0]].remove((word, first_index))
-            quick_find[pair[1]].remove((word, second_index))
-            #Update q_find data structure with new symbol
-            if new_symbol not in quick_find:
-                quick_find[new_symbol] = set([(word, first_index)])
-            else:
-                quick_find[new_symbol].add((word, first_index))
+    new_symbol = "".join(pair)
+    involved_words = quick_pairs[pair]
+    #Edge cases can have you change the set as you iterate over it!
+    while involved_words:
+        word, first_index, second_index = involved_words.pop()
+        #Remove the mapping of the word and old symbols from the quick_find structure
+        quick_find[pair[0]].remove((word, first_index))
+        quick_find[pair[1]].remove((word, second_index))
+        #Update q_find data structure with new symbol
+        if new_symbol not in quick_find:
+            quick_find[new_symbol] = set([(word, first_index)])
+        else:
+            quick_find[new_symbol].add((word, first_index))
 
-            #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
-            if second_index + 1 < len(segmentations[word]):
-                quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
-            if first_index - 1 >= 0: 
-                quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
-            
-            #Update segmentations data structure 
-            segmentations[word][first_index] = new_symbol
-            segmentations[word].pop(second_index)
-
-            #Update the pairs data structure with new pairs formed with new symbol 
-            if second_index < len(segmentations[word]):
-                if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
-                else:
-                    quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
-
-            if first_index - 1 >= 0:
-                if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
-                    quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
-                else:
-                    quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
-
-            #Now, move the indicies for things after the merged pair!
-            for i in range(second_index, len(segmentations[word])):
-                quick_find[segmentations[word][i]].remove((word, i + 1))
-                quick_find[segmentations[word][i]].add((word, i))
-                if i + 1 < len(segmentations[word]):
-                    quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
-                    quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
-
+        #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
+        if second_index + 1 < len(segmentations[word]):
+            quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+        if first_index - 1 >= 0: 
+            quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
         
-        #One last thing now that we're done...
-        quick_pairs.pop(pair)
-    except Exception as e:
-        print("Starting debug output")
-        print(type(e))
-        print(e.args)
-        print(e)
-        pdb.set_trace()
+        #Update segmentations data structure 
+        segmentations[word][first_index] = new_symbol
+        segmentations[word].pop(second_index)
+
+        #Update the pairs data structure with new pairs formed with new symbol 
+        if second_index < len(segmentations[word]):
+            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
+            else:
+                quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+
+        if first_index - 1 >= 0:
+            if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
+                quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
+            else:
+                quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+
+        #Now, move the indicies for things after the merged pair!
+        for i in range(second_index, len(segmentations[word])):
+            quick_find[segmentations[word][i]].remove((word, i + 1))
+            quick_find[segmentations[word][i]].add((word, i))
+            if i + 1 < len(segmentations[word]):
+                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+
+    
+    #One last thing now that we're done...
+    quick_pairs.pop(pair)
 
 
     
 
-
 if __name__ == '__main__':
-    #Main hyperparameter!
+    #Main hyperparameters!
     gamma = 0.3
+    sample_size = 100
+    search_scatter = 30
 
     parser = create_parser()
     args = parser.parse_args()
     word_vectors = pickle.load(args.vectors)
     segmentations = {}
     
-    #Dict that maps characters to words containing them (for speed)
+    #Dict that maps characters to words containing them
     quick_find = {}
-    #Dict that maps pairs to words containing them (for speed)
+    #Dict that maps pairs to words containing them
     quick_pairs = {}
     vocab = get_vocabulary(args.input)
 
@@ -219,27 +238,18 @@ if __name__ == '__main__':
     print("SIZE VOCAB")
     print(len(vocab.keys()))
 
-    #Memoize deltas for certain pairs 
-    memo_deltas = {}
-
-
     num_iterations = 5000
     #Core algorithm
     for i in range(num_iterations):
         print(i)
-        #Look at 100 merges, and then pick the best one
-        search_scatter = 20
+        #Look at many merges, and then pick the best one
         pairs = list(quick_pairs.keys())
         operations = [randint(0, len(pairs) - 1) for i in range(search_scatter)]
-        deltas = [get_pair_delta(pairs[i]) for i in operations]
+        deltas = [sample_pair_delta(pairs[i]) for i in operations]
         best_index, best_delta = min(enumerate(deltas), key=operator.itemgetter(1))        
+        print(best_delta)
         best_pair = pairs[operations[best_index]]
         merge_update(best_pair)
-
-        #Purge the cache of deltas that are no longer accurate
-        for pair in list(memo_deltas.keys()):
-            if best_pair[0] in pair or best_pair[1] in pair:
-                memo_deltas.pop(pair)
 
         
 
