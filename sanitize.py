@@ -4,6 +4,7 @@ import sys
 import codecs
 import argparse
 import string
+import pickle
 from collections import defaultdict
 
 import re
@@ -29,6 +30,10 @@ def create_parser():
         metavar='PATH',
         help="Input file (default: standard input).")
     parser.add_argument(
+        '--vectors', '-v', type=argparse.FileType('rb'), default=sys.stdin,
+        metavar='PATH',
+        help="Serialzed dict of word vectors")
+    parser.add_argument(
         '--output', '-o', type=argparse.FileType('w+'), default=sys.stdout,
         metavar='PATH',
         help="Output file (default: standard output)")
@@ -39,6 +44,7 @@ def create_parser():
 if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
+    word_vectors = pickle.load(args.vectors)
 
     for line in args.input:
 
@@ -46,6 +52,8 @@ if __name__ == '__main__':
         lower_case = letters_only.lower()
         lower_case = lower_case.split()
         new_sentence = [w for w in lower_case if len(w) > 1 and " " not in w]
+        #HACK since we don't have the similarity net yet. Will be removed when that's in place.'
+        new_sentence = [w for w in new_sentence if w in word_vectors]
         args.output.write(" ".join(new_sentence))
         args.output.write('\n')
 

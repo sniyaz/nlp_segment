@@ -69,9 +69,6 @@ def get_vocabulary(fobj):
     vocab = Counter()
     for line in fobj:
         for word in line.split():
-            #HACK since we don't have the similarity net yet...
-            if word not in word_vectors:
-                continue
             vocab[word] += 1
 
     return vocab
@@ -196,7 +193,7 @@ if __name__ == '__main__':
     #Main hyperparameters!
     gamma = 0.3
     sample_size = 100
-    search_scatter = 30
+    search_scatter = 100
 
     parser = create_parser()
     args = parser.parse_args()
@@ -238,7 +235,7 @@ if __name__ == '__main__':
     print("SIZE VOCAB")
     print(len(vocab.keys()))
 
-    num_iterations = 5000
+    num_iterations = 10000
     #Core algorithm
     for i in range(num_iterations):
         print(i)
@@ -254,11 +251,13 @@ if __name__ == '__main__':
         
 
             
+    to_write = list(vocab.keys())
+    to_write.sort()
     #Write the word segmentations to the output file
-    for word in vocab:
+    for word in to_write:
         final_seg = segmentations[word]
-        delimited_seg = " ".join(final_seg)
-        args.output.write(delimited_seg)
+        delimited_seg = "  ".join(final_seg)
+        args.output.write(word + ": " + delimited_seg)
         args.output.write('\n')
 
 
