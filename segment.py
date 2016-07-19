@@ -47,20 +47,6 @@ def create_parser():
 
     return parser
 
-def get_segmentations(word_in):
-    word_segmentations = []
-    cuts = []
-    for i in range(0,len(word_in)):
-        cuts.extend(combinations(range(1,len(word_in)),i))
-    for i in cuts:
-        last = 0
-        output = []
-        for j in i:
-            output.append(word_in[last:j])
-            last = j
-        output.append(word_in[last:])
-        word_segmentations.append(output)
-    return word_segmentations
 
 def get_vocabulary(fobj):
     """Set up our data structures...
@@ -76,15 +62,6 @@ def get_vocabulary(fobj):
 
 def get_similarity(word1, word2):
     return np.dot(word_vectors[word1], word_vectors[word2])
-
-
-#Given a list of two words in segmentation form, check if they share a common substring
-def check_common_substring(seg1, seg2):
-    for i in range(len(seg1) - 1):
-        for j in range(len(seg2) - 1):
-            if (seg1[i] == seg2[j]) and (seg1[i+1] == seg2[j+1]):
-                return True
-    return False
 
 
 #Is merging a pair worth it? Use a sampling approach to decide...
@@ -137,12 +114,31 @@ def sample_words(sample_set):
     return sampled_words
 
 
+def remove_word_check(word, in_part):
+for part in segmentations[word]:
+    if part == in_part:
+        return False
+return True
+
+
+#MASSIVE monster of a function that updates all data structures after a merge operation...
 def merge_update(pair):
-    new_symbol = "".join(pair)
-    involved_words = quick_pairs[pair]
-    #Edge cases can have you change the set as you iterate over it!
-    while involved_words:
-        word, first_index, second_index = involved_words.pop()
+
+    def unweighted_update():
+        #Remove the mapping of the word and old symbols from the quick_find structure
+        if remove_word_check(word, pair[0]):
+            quick_find[pair[0]].remove((word,))
+        if remove_word_check(word, pair[1]):
+            #New edge case in situations like "l" + "l"
+            if pair[0] != pair[1]:
+                quick_find[pair[1]].remove((word,))
+        #Update q_find data structure with new symbol
+        if new_symbol not in quick_find:
+            quick_find[new_symbol] = set([(word,)])
+        else:
+            quick_find[new_symbol].add((word,))
+
+    def weighted_update():
         #Remove the mapping of the word and old symbols from the quick_find structure
         quick_find[pair[0]].remove((word, first_index))
         quick_find[pair[1]].remove((word, second_index))
@@ -151,6 +147,20 @@ def merge_update(pair):
             quick_find[new_symbol] = set([(word, first_index)])
         else:
             quick_find[new_symbol].add((word, first_index))
+
+        #Now, move the indicies for things after the merged pair!
+        for i in range(second_index, len(segmentations[word])):
+            quick_find[segmentations[word][i]].remove((word, i + 1))
+            quick_find[segmentations[word][i]].add((word, i))
+       
+       
+    #Main function START
+    new_symbol = "".join(pair)
+    involved_words = quick_pairs[pair]
+
+    #Edge cases can have you change the set as you iterate over it!
+    while involved_words:
+        word, first_index, second_index = involved_words.pop()
 
         #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
         if second_index + 1 < len(segmentations[word]):
@@ -164,7 +174,8 @@ def merge_update(pair):
 
         #Update the pairs data structure with new pairs formed with new symbol 
         if second_index < len(segmentations[word]):
-            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
+            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                
+                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
             else:
                 quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
 
@@ -173,27 +184,36 @@ def merge_update(pair):
                 quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
             else:
                 quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
-
+        
         #Now, move the indicies for things after the merged pair!
-        for i in range(second_index, len(segmentations[word])):
-            quick_find[segmentations[word][i]].remove((word, i + 1))
-            quick_find[segmentations[word][i]].add((word, i))
-            if i + 1 < len(segmentations[word]):
-                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
-                quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
-
+        for i in range(second_index, len(segmentations[word]) - 1):
+            quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+            quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+        
+        #Call the appropriate function to update the quick_find data structure
+        if weighted_sampling:
+            weighted_update()
+        else:
+            unweighted_update()
     
     #One last thing now that we're done...
     quick_pairs.pop(pair)
 
 
-    
+
+
+
+
+
 
 if __name__ == '__main__':
     #Main hyperparameters!
     gamma = 0.3
     sample_size = 100
     search_scatter = 100
+
+    tie_break_only = False
+    weighted_sampling = False
 
     parser = create_parser()
     args = parser.parse_args()
@@ -213,10 +233,17 @@ if __name__ == '__main__':
         segmentations[word] = list(word)
         #Set up the quick_find data structure
         for idx, c in enumerate(word):
-            if c not in quick_find:
-                quick_find[c] = set([(word, idx)])
+            if weighted_sampling:
+                if c not in quick_find:
+                    quick_find[c] = set([(word, idx)])
+                else:
+                    quick_find[c].add((word, idx))
             else:
-                quick_find[c].add((word, idx))
+                if c not in quick_find:
+                    quick_find[c] = set([(word,)])
+                else:
+                    quick_find[c].add((word,))
+
             #Now set up the quick_pairs data structure
             if idx != len(word) - 1:
                 if (c, word[idx+1]) not in quick_pairs:
@@ -248,8 +275,7 @@ if __name__ == '__main__':
         best_pair = pairs[operations[best_index]]
         merge_update(best_pair)
 
-        
-
+    
             
     to_write = list(vocab.keys())
     to_write.sort()
