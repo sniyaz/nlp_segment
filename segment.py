@@ -64,24 +64,43 @@ def get_similarity(word1, word2):
     return np.dot(word_vectors[word1], word_vectors[word2])
 
 
+def get_pair_freq(pair):
+        return len(quick_pairs[pair])
+
+
+#Euclidean distance between 2 vectors
+def distance(vec1, vec2):
+    difference = vec1 - vec2
+    return np.linalg.norm(difference)
+
+
 #Is merging a pair worth it? Use a sampling approach to decide...
 def sample_pair_delta(pair):
     involved_words = [i[0] for i in quick_pairs[pair]]
-    #We only SAMPLE the change in cost for computational reasons
+    #We only SAMPLE the change in cost for runtime reasons
+    pair_words = set()
+    for word in involved_words:
+        pair_words.add((word,))
+    #Estimated center of the new symbol's vectors
+    pair_mean = sample_mean(pair_words)
+
     cost_delta = 0
     for word in involved_words:
         #On a merge, the length goes down by one. Reflect the first term of the cost function
-        cost_delta -= vocab[word]
+        local_delta = -1
         #"Undo" the contributions to the second part of the cost function
-        cost_delta += gamma*sample_average_distance(word, quick_find[pair[0]])
-        cost_delta += gamma*sample_average_distance(word, quick_find[pair[1]])
-        #But there are new negative terms.
-        cost_delta -= gamma*sample_average_distance(word, quick_pairs[pair])
+        cur_word_vec = word_vectors[word]
+        local_delta -= gamma*distance(cur_word_vec, sample_mean(quick_find[pair[0]]))
+        local_delta -= gamma*distance(cur_word_vec, sample_mean(quick_find[pair[1]]))
+        #But there are new distance terms.
+        local_delta += gamma*distance(cur_word_vec, pair_mean)
+
+        cost_delta += vocab[word]*local_delta
             
     return cost_delta
 
 
-def sample_average_distance(target_word, sample_set):
+def sample_mean(sample_set):
     sampled_words = sample_words(sample_set)
     if not sampled_words:
         return 0
@@ -95,8 +114,7 @@ def sample_average_distance(target_word, sample_set):
             average = average + word_vectors[sample[0]]
            
     average = average/len(sampled_words)
-    difference = word_vectors[target_word] - average
-    return np.linalg.norm(difference)
+    return average
 
 
 def sample_words(sample_set):
@@ -114,47 +132,26 @@ def sample_words(sample_set):
     return sampled_words
 
 
-def remove_word_check(word, in_part):
-for part in segmentations[word]:
-    if part == in_part:
-        return False
-return True
+#Needed if doing BPE with tie breaking. Big table of all pair frequencies
+def get_pair_statistics(vocab):
+    for i, (word, freq) in enumerate(vocab):
+        prev_char = word[0]
+        for char in word[1:]:
+            all_freqs[prev_char, char] += freq
+
+    return stats, indices
 
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
 def merge_update(pair):
 
-    def unweighted_update():
-        #Remove the mapping of the word and old symbols from the quick_find structure
-        if remove_word_check(word, pair[0]):
-            quick_find[pair[0]].remove((word,))
-        if remove_word_check(word, pair[1]):
-            #New edge case in situations like "l" + "l"
-            if pair[0] != pair[1]:
-                quick_find[pair[1]].remove((word,))
-        #Update q_find data structure with new symbol
-        if new_symbol not in quick_find:
-            quick_find[new_symbol] = set([(word,)])
-        else:
-            quick_find[new_symbol].add((word,))
+    #Helper for decting when the last occurance of a character in a word vanishes
+    def remove_word_check(word, in_part):
+        for part in segmentations[word]:
+            if part == in_part:
+                return False
+        return True
 
-    def weighted_update():
-        #Remove the mapping of the word and old symbols from the quick_find structure
-        quick_find[pair[0]].remove((word, first_index))
-        quick_find[pair[1]].remove((word, second_index))
-        #Update q_find data structure with new symbol
-        if new_symbol not in quick_find:
-            quick_find[new_symbol] = set([(word, first_index)])
-        else:
-            quick_find[new_symbol].add((word, first_index))
-
-        #Now, move the indicies for things after the merged pair!
-        for i in range(second_index, len(segmentations[word])):
-            quick_find[segmentations[word][i]].remove((word, i + 1))
-            quick_find[segmentations[word][i]].add((word, i))
-       
-       
-    #Main function START
     new_symbol = "".join(pair)
     involved_words = quick_pairs[pair]
 
@@ -190,31 +187,56 @@ def merge_update(pair):
             quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
             quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
         
-        #Call the appropriate function to update the quick_find data structure
-        if weighted_sampling:
-            weighted_update()
+        #Remove the mapping of the word and old symbols from the quick_find structure
+        if remove_word_check(word, pair[0]):
+            quick_find[pair[0]].remove((word,))
+        if remove_word_check(word, pair[1]):
+            #New edge case in situations like "l" + "l"
+            if pair[0] != pair[1]:
+                quick_find[pair[1]].remove((word,))
+        #Update q_find data structure with new symbol
+        if new_symbol not in quick_find:
+            quick_find[new_symbol] = set([(word,)])
         else:
-            unweighted_update()
-    
+            quick_find[new_symbol].add((word,))
+        
     #One last thing now that we're done...
     quick_pairs.pop(pair)
 
 
+def draw_random_pairs():
+    pairs = list(quick_pairs.keys())
+    drawn_indicies = [randint(0, len(pairs) - 1) for i in range(search_scatter)]
+    drawn_pairs = [pairs[i] for i in drawn_indicies]
+    return drawn_pairs
 
 
+#Inspired by the BPE Paper code. Remember to cite if needed.
+def draw_frequent_pairs():
+    #Repopulate the cache in the event that it goes dry
+    if len(freq_cache) == 0:
+        all_pairs = list(quick_pairs.keys())
+        most_frequent = max(all_pairs, key=get_pair_freq)
+        threshold = get_pair_freq(most_frequent)/10
+        for pair in all_pairs:
+            if get_pair_freq(pair) > threshold:
+                freq_cache[pair] = get_pair_freq(pair)
+        
+    frequent_pair, highest_freq = max(freq_cache, key=freq_cache.get)
+    most_frequent_pairs = [p for p in freq_cache if freq_cache[p] == highest_freq]
+    return most_frequent_pairs
 
-
-
-
+        
+    
 if __name__ == '__main__':
+    tie_break_only = False
     #Main hyperparameters!
-    gamma = 0.3
     sample_size = 100
+    #Only if employing as more than just tie-breaker
+    gamma = 0.3
     search_scatter = 100
 
-    tie_break_only = False
-    weighted_sampling = False
-
+    
     parser = create_parser()
     args = parser.parse_args()
     word_vectors = pickle.load(args.vectors)
@@ -224,6 +246,8 @@ if __name__ == '__main__':
     quick_find = {}
     #Dict that maps pairs to words containing them
     quick_pairs = {}
+    freq_cache = Counter()
+    all_freqs = Counter()
     vocab = get_vocabulary(args.input)
 
     #Each words starts totally segmented..
@@ -233,16 +257,10 @@ if __name__ == '__main__':
         segmentations[word] = list(word)
         #Set up the quick_find data structure
         for idx, c in enumerate(word):
-            if weighted_sampling:
-                if c not in quick_find:
-                    quick_find[c] = set([(word, idx)])
-                else:
-                    quick_find[c].add((word, idx))
+            if c not in quick_find:
+                quick_find[c] = set([(word,)])
             else:
-                if c not in quick_find:
-                    quick_find[c] = set([(word,)])
-                else:
-                    quick_find[c].add((word,))
+                quick_find[c].add((word,))
 
             #Now set up the quick_pairs data structure
             if idx != len(word) - 1:
@@ -267,16 +285,11 @@ if __name__ == '__main__':
     for i in range(num_iterations):
         print(i)
         #Look at many merges, and then pick the best one
-        pairs = list(quick_pairs.keys())
-        operations = [randint(0, len(pairs) - 1) for i in range(search_scatter)]
-        deltas = [sample_pair_delta(pairs[i]) for i in operations]
-        best_index, best_delta = min(enumerate(deltas), key=operator.itemgetter(1))        
-        print(best_delta)
-        best_pair = pairs[operations[best_index]]
+        drawn_pairs = draw_random_pairs()
+        best_pair  = min(drawn_pairs, key=sample_pair_delta)        
         merge_update(best_pair)
 
     
-            
     to_write = list(vocab.keys())
     to_write.sort()
     #Write the word segmentations to the output file
