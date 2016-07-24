@@ -31,7 +31,7 @@ def create_parser():
         '--output', '-o', type=argparse.FileType('w+'), default=sys.stdout,
         metavar='PATH',
         help="Output file (default: standard output)")
-    
+
     return parser
     
 
@@ -45,7 +45,8 @@ if __name__ == '__main__':
     to_write = list(vocab.keys())
     to_write.sort()
     for w in to_write:
-        args.output.write(w + ": " + bpe.segment(w))
+        delimited_seg = bpe.segment(w)
+        args.output.write(w + ": " + delimited_seg)
         args.output.write(u'\n')
 
 
