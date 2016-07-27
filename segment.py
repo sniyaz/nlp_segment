@@ -276,6 +276,7 @@ def draw_frequent_pairs():
         
     
 if __name__ == '__main__':
+    use_bpe = False
     tie_break_only = True
     #Main hyperparameters!
     sample_size = 100
@@ -339,16 +340,21 @@ if __name__ == '__main__':
         if tie_break_only:
             drawn_pairs = draw_frequent_pairs()
             print(drawn_pairs)
+            if use_bpe:
+                best_pair = max(freq_cache, key=freq_cache.get)
             #When only breaking ties, sometimes there's only one canidate..
-            if len(drawn_pairs) == 1:
+            elif len(drawn_pairs) == 1:
                 best_pair = drawn_pairs[0]
             else:
                 num_ties += 1
                 best_pair = min(drawn_pairs, key=get_pair_spread)
+
         else:
             drawn_pairs = draw_random_pairs()
             best_pair = min(drawn_pairs, key=sample_pair_delta) 
                            
+        #pdb.set_trace()
+        
         merge_update(best_pair)
 
     
