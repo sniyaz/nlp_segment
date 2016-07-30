@@ -31,32 +31,56 @@ def create_parser():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="test and report with our algorithm")
-
     parser.add_argument(
         '--input', '-i', type=argparse.FileType('r'), default=sys.stdin,
         metavar='PATH',
         help="Input file (default: standard input).")
+    parser.add_argument("-ft", action="store_true",
+        help="Set if input corpus is frequencey table")
     parser.add_argument(
         '--vectors', '-v', type=argparse.FileType('rb'), default=sys.stdin,
         metavar='PATH',
         help="Serialzed dict of word vectors")
+    #Just to clarify, this is the START of the TWO output files' names. 
+    #See the end of this file.
     parser.add_argument(
-        '--output', '-o', type=argparse.FileType('w+'), default=sys.stdout,
+        '--output', '-o', action="store",
         metavar='PATH',
-        help="Output file (default: standard output)")
-
+        help="Output name")
+    
     return parser
 
 
 def get_vocabulary(fobj):
-    """Set up our data structures...
-    """
     fobj.seek(0)
     vocab = Counter()
     for line in fobj:
+        line = line.strip()
         for word in line.split():
             vocab[word] += 1
 
+    return vocab
+
+
+def get_vocabulary_freq_table(fobj):
+    fobj.seek(0)
+    #Write out a pure corpus so we know what we trained on. "Pure" means it was in the 300k word vectors.
+    pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
+    vocab = Counter()
+    missed = 0
+    for line in fobj:
+        line = line.strip()
+        line_parts = line.split()
+        freq = int(line_parts[0])
+        word = line_parts[1]
+        if word in word_vectors:
+            vocab[word] += freq
+            pure_corpus_obj.write(line + "\n")
+        else:
+            missed += 1
+            
+    print("MISSED: ")
+    print(missed)
     return vocab
 
 
@@ -100,7 +124,6 @@ def sample_pair_delta(pair):
 def get_pair_spread(pair):
     involved_words = [i[0] for i in quick_pairs[pair]]
     pair_words = set()
-    #pdb.set_trace()
     for word in involved_words:
         pair_words.add((word,))
     #Center of the new symbol's vectors
@@ -158,6 +181,50 @@ def get_pair_statistics():
     return all_freqs
 
 
+#Updates the quick_pairs and segmentations data structures for a given word.
+def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, \
+    segmentations, freq_changes, update_freq):
+    #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
+    if second_index + 1 < len(segmentations[word]):
+        quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+        if update_freq:
+            all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
+            freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
+    if first_index - 1 >= 0: 
+        quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+        if update_freq:
+            all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
+            freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
+    
+    #Update segmentations data structure 
+    segmentations[word][first_index] = new_symbol
+    segmentations[word].pop(second_index)
+
+    #Update the pairs data structure with new pairs formed with new symbol 
+    if second_index < len(segmentations[word]):
+        if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                
+            quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
+        else:
+            quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+        if update_freq:
+            all_freqs[(new_symbol, segmentations[word][second_index])] += vocab[word]
+            freq_changes[(new_symbol, segmentations[word][second_index])] += vocab[word]
+        
+    if first_index - 1 >= 0:
+        if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
+            quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
+        else:
+            quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+        if update_freq: 
+            all_freqs[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
+            freq_changes[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
+    
+    #Now, move the indicies for things after the merged pair!
+    for i in range(second_index, len(segmentations[word]) - 1):
+        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+        
+
 #MASSIVE monster of a function that updates all data structures after a merge operation...
 def merge_update(pair):
 
@@ -177,42 +244,7 @@ def merge_update(pair):
     while involved_words:
         word, first_index, second_index = involved_words.pop()
 
-        #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
-        if second_index + 1 < len(segmentations[word]):
-            quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
-            all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
-            freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
-        if first_index - 1 >= 0: 
-            quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
-            all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
-            freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
-        
-        #Update segmentations data structure 
-        segmentations[word][first_index] = new_symbol
-        segmentations[word].pop(second_index)
-
-        #Update the pairs data structure with new pairs formed with new symbol 
-        if second_index < len(segmentations[word]):
-            if (new_symbol, segmentations[word][second_index]) not in quick_pairs:                
-                quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
-            else:
-                quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
-            all_freqs[(new_symbol, segmentations[word][second_index])] += vocab[word]
-            freq_changes[(new_symbol, segmentations[word][second_index])] += vocab[word]
-            
-
-        if first_index - 1 >= 0:
-            if (segmentations[word][first_index - 1], new_symbol) not in quick_pairs:
-                quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
-            else:
-                quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
-            all_freqs[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
-            freq_changes[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
-        
-        #Now, move the indicies for things after the merged pair!
-        for i in range(second_index, len(segmentations[word]) - 1):
-            quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
-            quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+        core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, True)
         
         #Remove the mapping of the word and old symbols from the quick_find structure
         if remove_word_check(word, pair[0]):
@@ -283,7 +315,6 @@ if __name__ == '__main__':
     #Only if employing as more than just tie-breaker
     gamma = 0.3
     search_scatter = 100
-
     
     parser = create_parser()
     args = parser.parse_args()
@@ -297,9 +328,12 @@ if __name__ == '__main__':
     #Cache for speeing up max when finding frequent pairs
     threshold = None
     freq_cache = Counter()
-    vocab = get_vocabulary(args.input)
+    if args.ft:
+        vocab = get_vocabulary_freq_table(args.input)
+    else:
+        vocab = get_vocabulary(args.input)
     all_freqs = get_pair_statistics()
-    
+
 
     #Each words starts totally segmented..
     #Set up to the data structures
@@ -333,6 +367,7 @@ if __name__ == '__main__':
 
     num_ties = 0
     num_iterations = 10000
+    merges_done = []
     #Core algorithm
     for i in range(num_iterations):
         print(i)
@@ -352,20 +387,30 @@ if __name__ == '__main__':
         else:
             drawn_pairs = draw_random_pairs()
             best_pair = min(drawn_pairs, key=sample_pair_delta) 
-                           
-        #pdb.set_trace()
-        
+                                   
         merge_update(best_pair)
+        merges_done.append(best_pair)
 
     
+    #Write out the segmentations of each word in the corpus.
+    segs_output_obj = open(args.output + "_segs.txt", "w+")
     to_write = list(vocab.keys())
     to_write.sort()
     #Write the word segmentations to the output file
     for word in to_write:
         final_seg = segmentations[word]
-        delimited_seg = "  ".join(final_seg)
-        args.output.write(word + ": " + delimited_seg)
-        args.output.write('\n')
+        delimited_seg = " ".join(final_seg)
+        segs_output_obj.write(word + ": " + delimited_seg)
+        segs_output_obj.write('\n')
+    segs_output_obj.close()
+
+
+    #Write out the merge operations in the order they were done.
+    merge_ops_output_obj = open(args.output + "_merge_ops.txt", "w+")
+    for pair in merges_done:
+        merge_ops_output_obj.write(" ".join(pair))
+        merge_ops_output_obj.write('\n')
+    merge_ops_output_obj.close()
     
     print("NUM TIES WAS:")
     print(num_ties)
