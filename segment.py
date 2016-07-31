@@ -48,6 +48,8 @@ def create_parser():
         '--output', '-o', action="store",
         metavar='PATH',
         help="Output name")
+    parser.add_argument("-det", action="store_true",
+        help="Set if you want deterministic behavior")
     
     return parser
 
@@ -308,7 +310,10 @@ def draw_frequent_pairs():
     most_frequent_pairs = [p for p in freq_cache if freq_cache[p] == freq_cache[frequent_pair]]
 
     #To prevent non-determinism arrising from the dictionaries
-    return sorted(most_frequent_pairs, key=deterministic_hash)
+    if args.det:
+        return sorted(most_frequent_pairs, key=deterministic_hash)
+    else:
+        return most_frequent_pairs
 
         
 
@@ -383,7 +388,7 @@ if __name__ == '__main__':
                 best_pair = drawn_pairs[0]
             else:
                 num_ties += 1
-                best_pair = max(drawn_pairs, key=get_pair_spread)
+                best_pair = min(drawn_pairs, key=get_pair_spread)
             
             sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))
               

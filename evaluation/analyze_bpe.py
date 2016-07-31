@@ -1,9 +1,11 @@
 #A script that takes rules from BPE and writes the resuting segmentations
 # a manner comparable to our algrithm so we can compare!
 
+import sys
+sys.path.insert(0, '../')
 from segment import get_vocabulary
 import sys
-sys.path.insert(0, '../subword-nmt-master/')
+sys.path.insert(0, '../../subword-nmt-master/')
 from apply_bpe import BPE
 
 import codecs
