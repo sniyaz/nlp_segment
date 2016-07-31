@@ -228,7 +228,6 @@ def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pa
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
 def merge_update(pair):
-
     #Helper for decting when the last occurance of a character in a word vanishes
     def remove_word_check(word, in_part):
         for part in segmentations[word]:
@@ -267,10 +266,13 @@ def merge_update(pair):
         else:
             if changed_pair in freq_cache:
                 freq_cache.pop(changed_pair)
+    
+    #Sometimes this can be an issue when the pair already got popped above.
+    if pair in freq_cache:
+        freq_cache.pop(pair)
 
     #One last thing now that we're done...
     quick_pairs.pop(pair)
-    freq_cache.pop(pair)
     all_freqs.pop(pair)
 
 
@@ -381,7 +383,7 @@ if __name__ == '__main__':
                 best_pair = drawn_pairs[0]
             else:
                 num_ties += 1
-                best_pair = min(drawn_pairs, key=get_pair_spread)
+                best_pair = max(drawn_pairs, key=get_pair_spread)
             
             sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))
               
