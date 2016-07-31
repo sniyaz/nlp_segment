@@ -13,6 +13,7 @@ from itertools import combinations
 from random import shuffle
 import copy
 import operator
+import zlib
 
 import pdb
 
@@ -273,6 +274,10 @@ def merge_update(pair):
     all_freqs.pop(pair)
 
 
+def deterministic_hash(data):
+    data = str(data).encode('utf-8')
+    return zlib.adler32(data)
+
 
 def draw_random_pairs():
     pairs = list(quick_pairs.keys())
@@ -299,15 +304,14 @@ def draw_frequent_pairs():
     #print(len(freq_cache))
     frequent_pair = max(freq_cache, key=freq_cache.get)
     most_frequent_pairs = [p for p in freq_cache if freq_cache[p] == freq_cache[frequent_pair]]
-    
-    #if (len(most_frequent_pairs)) > 1:
-        #print("NUM TIES:")
-        #print(len(most_frequent_pairs))
-    return most_frequent_pairs
+
+    #To prevent non-determinism arrising from the dictionaries
+    return sorted(most_frequent_pairs, key=deterministic_hash)
 
         
-    
+
 if __name__ == '__main__':
+    
     use_bpe = False
     tie_break_only = True
     #Main hyperparameters!
@@ -370,20 +374,17 @@ if __name__ == '__main__':
     merges_done = []
     #Core algorithm
     for i in range(num_iterations):
-        print(i)
         #Look at many merges, and then pick the best one
         if tie_break_only:
-            drawn_pairs = draw_frequent_pairs()
-            print(drawn_pairs)
-            if use_bpe:
-                best_pair = max(freq_cache, key=freq_cache.get)
-            #When only breaking ties, sometimes there's only one canidate..
-            elif len(drawn_pairs) == 1:
+            drawn_pairs = draw_frequent_pairs()            
+            if use_bpe or len(drawn_pairs) == 1:
                 best_pair = drawn_pairs[0]
             else:
                 num_ties += 1
                 best_pair = min(drawn_pairs, key=get_pair_spread)
-
+            
+            sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))
+              
         else:
             drawn_pairs = draw_random_pairs()
             best_pair = min(drawn_pairs, key=sample_pair_delta) 
@@ -391,7 +392,7 @@ if __name__ == '__main__':
         merge_update(best_pair)
         merges_done.append(best_pair)
 
-    
+
     #Write out the segmentations of each word in the corpus.
     segs_output_obj = open(args.output + "_segs.txt", "w+")
     to_write = list(vocab.keys())
@@ -411,7 +412,7 @@ if __name__ == '__main__':
         merge_ops_output_obj.write(" ".join(pair))
         merge_ops_output_obj.write('\n')
     merge_ops_output_obj.close()
-    
+
     print("NUM TIES WAS:")
     print(num_ties)
 
