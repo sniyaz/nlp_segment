@@ -33,23 +33,23 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="test and report with our algorithm")
     parser.add_argument(
+        '--mode', action="store",
+        help="1 -> Vanilla BPE, 2-> Tie Breaking BPE, 3-> Local Optimization")
+    parser.add_argument(
         '--input', '-i', type=argparse.FileType('r'), default=sys.stdin,
         metavar='PATH',
         help="Input file (default: standard input).")
     parser.add_argument("-ft", action="store_true",
         help="Set if input corpus is frequencey table")
-    parser.add_argument(
-        '--vectors', '-v', type=argparse.FileType('rb'), default=sys.stdin,
-        metavar='PATH',
-        help="Serialzed dict of word vectors")
     #Just to clarify, this is the START of the TWO output files' names. 
     #See the end of this file.
     parser.add_argument(
         '--output', '-o', action="store",
         metavar='PATH',
         help="Output name")
-    parser.add_argument("-det", action="store_true",
-        help="Set if you want deterministic behavior")
+    parser.add_argument(
+        '--symbols', '-s', action="store",
+        help="Number of merge operations to perform")
     
     return parser
 
@@ -87,6 +87,18 @@ def get_vocabulary_freq_table(fobj):
     return vocab
 
 
+#Needed if doing BPE with tie breaking. Big table of all pair frequencies
+def get_pair_statistics():
+    all_freqs = Counter()
+    for word, freq in vocab.items():
+        prev_char = word[0]
+        for char in word[1:]:
+            all_freqs[(prev_char, char)] += freq
+            prev_char = char
+
+    return all_freqs
+
+
 def get_similarity(word1, word2):
     return np.dot(word_vectors[word1], word_vectors[word2])
 
@@ -95,50 +107,6 @@ def get_similarity(word1, word2):
 def distance(vec1, vec2):
     difference = vec1 - vec2
     return np.linalg.norm(difference)
-
-
-#Is merging a pair worth it? Use a sampling approach to decide...
-def sample_pair_delta(pair):
-    involved_words = [i[0] for i in quick_pairs[pair]]
-    #We only SAMPLE the change in cost for runtime reasons
-    pair_words = set()
-    for word in involved_words:
-        pair_words.add((word,))
-    #Estimated center of the new symbol's vectors
-    pair_mean = get_mean(sample_words(pair_words))
-
-    cost_delta = 0
-    for word in involved_words:
-        #On a merge, the length goes down by one. Reflect the first term of the cost function
-        local_delta = -1
-        #"Undo" the contributions to the second part of the cost function
-        cur_word_vec = word_vectors[word]
-        local_delta -= gamma*distance(cur_word_vec, get_mean(sample_words(quick_find[pair[0]])))
-        local_delta -= gamma*distance(cur_word_vec, get_mean(sample_words(quick_find[pair[1]])))
-        #But there are new distance terms.
-        local_delta += gamma*distance(cur_word_vec, pair_mean)
-
-        cost_delta += vocab[word]*local_delta
-            
-    return cost_delta
-
-
-#Get a the average distance of vectors in a group from the mean. Breaks ties in BPE.
-def get_pair_spread(pair):
-    involved_words = [i[0] for i in quick_pairs[pair]]
-    pair_words = set()
-    for word in involved_words:
-        pair_words.add((word,))
-    #Center of the new symbol's vectors
-    pair_mean = get_mean(pair_words)
-    average_spread = 0
-
-    for word in pair_words:
-        average_spread += distance(word_vectors[word[0]], pair_mean)
-    
-    average_spread = average_spread/len(pair_words)
-   
-    return average_spread
 
 
 def get_mean(sample_set):
@@ -157,33 +125,44 @@ def get_mean(sample_set):
     return average
 
 
-def sample_words(sample_set):
-    sampled_words = []
-    for i in range(sample_size):
-        if not sample_set:
-            break
-        sample = sample_set.pop()
-        sampled_words.append(sample)
+def get_set_cohesion(word_set):
+    involved_words = [i[0] for i in word_set]
+    pair_words = set()
+    for word in involved_words:
+        pair_words.add((word,))
+    if len(pair_words) == 0:
+        return 0
+    #Center of the new symbol's vectors
+    pair_mean = get_mean(pair_words)
+    average_similarity = 0
+
+    for word in pair_words:
+        average_similarity += np.dot(word_vectors[word[0]], pair_mean)
     
-    #We also want to RETURN the items to the set..
-    for sample in sampled_words:
-        sample_set.add(sample)
-        
-    return sampled_words
+    #pdb.set_trace()
+    average_similarity = average_similarity/len(pair_words)
+   
+    return average_similarity
 
 
-#Needed if doing BPE with tie breaking. Big table of all pair frequencies
-def get_pair_statistics():
-    all_freqs = Counter()
-    for word, freq in vocab.items():
-        prev_char = word[0]
-        for char in word[1:]:
-            all_freqs[(prev_char, char)] += freq
-            prev_char = char
+def get_pair_delta(pair):
+    length_delta = -all_freqs[pair]
+    old_spread = sigma_cache[pair[0]] + sigma_cache[pair[1]]
+    new_spread = 0
+    for char in pair:
+        new_char_qf = copy.deepcopy(quick_find[char])
+        for pair_info in quick_pairs[pair]:
+            word = pair_info[0]
+            if (word,) in new_char_qf:
+                new_char_qf.remove((word,))
+        new_spread += get_set_cohesion(new_char_qf)
+    
+    new_spread += get_set_cohesion(quick_pairs[pair])
+    spread_delta = old_spread - new_spread
 
-    return all_freqs
-
-
+    return length_delta + gamma*spread_delta
+    
+    
 #Updates the quick_pairs and segmentations data structures for a given word.
 def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, \
     segmentations, freq_changes, update_freq):
@@ -290,46 +269,108 @@ def draw_random_pairs():
     return drawn_pairs
 
 
-#Inspired by the BPE Paper code. Remember to cite if needed.
-def draw_frequent_pairs():
-    global threshold
-    #Repopulate the cache in the event that it goes dry
+#Check the freq_cache and refresh if needed.
+def check_cache():
     if len(freq_cache) == 0:
         most_frequent = max(all_freqs, key=all_freqs.get)
         if i == 0:
-            threshold = all_freqs[most_frequent]/10
+            refresh_freq_cache(all_freqs[most_frequent]/10)
         else:
-            threshold = all_freqs[most_frequent] * i/(i+10000.0)
-        for pair in all_freqs:
-            if all_freqs[pair] > threshold:
-                freq_cache[pair] = all_freqs[pair]
+            refresh_freq_cache(all_freqs[most_frequent] * i/(i+10000.0))    
+    
+    
+def refresh_freq_cache(new_threshold):
+    global threshold
+    threshold = new_threshold
+    for pair in all_freqs:
+        if all_freqs[pair] > threshold:
+            freq_cache[pair] = all_freqs[pair]
+
+
+#Inspired by the BPE Paper code. Remember to cite if needed.
+def draw_frequent_pairs():
+    #Repopulate the cache in the event that it goes dry
+    check_cache()
         
     #print("SIZE CACHE:")
     #print(len(freq_cache))
     frequent_pair = max(freq_cache, key=freq_cache.get)
     most_frequent_pairs = [p for p in freq_cache if freq_cache[p] == freq_cache[frequent_pair]]
 
-    #To prevent non-determinism arrising from the dictionaries
-    if args.det:
-        return sorted(most_frequent_pairs, key=deterministic_hash)
-    else:
-        return most_frequent_pairs
+    #To prevent non-determinism arising from the dictionaries
+    return sorted(most_frequent_pairs, key=deterministic_hash)
 
-        
+
+
+def update_sigma_cache(pair):
+    for char in pair:
+        sigma_cache[char] = get_set_cohesion(quick_find[char])
+    new_symbol = "".join(pair)
+    sigma_cache[new_symbol] = get_set_cohesion(quick_find[new_symbol])
+
+
+#If we manually get the merge that reduces our objective most. Local optimization stratagey!
+def get_next_state():
+    check_cache()
+    pruned = False
+    best_pair_so_far = None
+    best_drop_so_far = float("-inf")
+    seen = set()
+
+    spread_calcs_done = 0
+
+    while not pruned:
+        pair_list = list(freq_cache.keys())
+        pair_list = sorted(pair_list, key=freq_cache.get, reverse=True)
+        for pair in pair_list:
+            if pair in seen:
+                continue
+            elif all_freqs[pair] + 2*gamma*3 < best_drop_so_far:
+                pruned = True
+                break
+            #Even if we can't stop completely, there's no point looking at a pair like this. Prune just this one.
+            elif all_freqs[pair] + gamma*(3 - (sigma_cache[pair[0]] + sigma_cache[pair[1]])) < best_drop_so_far:
+                continue
+            else:
+                cur_drop = -get_pair_delta(pair)
+                spread_calcs_done += 1
+                if cur_drop > best_drop_so_far:
+                    best_drop_so_far = cur_drop
+                    best_pair_so_far = pair
+            seen.add(pair)
+        #If we didn't hit the cuttoff point, then we need to expand the cache and keep trying...
+        if not pruned:
+            refresh_freq_cache(0.5*threshold)
+            print("REFRESHING")
+
+    print("SPREAD CALCS DONE: " + str(spread_calcs_done))
+    print("BEST DROP: " + str(best_drop_so_far))
+    return best_pair_so_far
+
 
 if __name__ == '__main__':
     
-    use_bpe = False
-    tie_break_only = True
     #Main hyperparameters!
     sample_size = 100
     #Only if employing as more than just tie-breaker
-    gamma = 0.3
+    gamma = 10
     search_scatter = 100
     
     parser = create_parser()
     args = parser.parse_args()
-    word_vectors = pickle.load(args.vectors)
+
+    mode = int(args.mode)
+    if mode == 1:
+        use_bpe = True
+        tie_break_only = True
+    elif mode == 2:
+        use_bpe = False
+        tie_break_only = True
+    elif mode == 3:
+        use_bpe = False
+        tie_break_only = false
+
+    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     segmentations = {}
     
     #Dict that maps characters to words containing them
@@ -365,6 +406,11 @@ if __name__ == '__main__':
                 else:
                     quick_pairs[(c, word[idx+1])].add((word, idx, idx+1))
 
+    #Fill the sigma cache to start thigns off.
+    sigma_cache = {}
+    for char in quick_find:
+        sigma_cache[char] = get_set_cohesion(quick_find[char])
+
 
 
     print("SIZE QUICK FIND")
@@ -377,7 +423,7 @@ if __name__ == '__main__':
     print(len(vocab.keys()))
 
     num_ties = 0
-    num_iterations = 10000
+    num_iterations = int(args.symbols)
     merges_done = []
     #Core algorithm
     for i in range(num_iterations):
@@ -388,16 +434,19 @@ if __name__ == '__main__':
                 best_pair = drawn_pairs[0]
             else:
                 num_ties += 1
-                best_pair = min(drawn_pairs, key=get_pair_spread)
-            
-            sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))
+                best_pair = max(drawn_pairs, key=lambda x: get_set_cohesion(quick_pairs[x]))
               
         else:
-            drawn_pairs = draw_random_pairs()
-            best_pair = min(drawn_pairs, key=sample_pair_delta) 
-                                   
+            best_pair = get_next_state()
+    
+        sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))                           
+        
         merge_update(best_pair)
         merges_done.append(best_pair)
+
+        if not tie_break_only:
+            #Now that we've picked a pair, update the sigma_cache for future use.
+            update_sigma_cache(best_pair)
 
 
     #Write out the segmentations of each word in the corpus.

@@ -1,6 +1,7 @@
 #A script that scores segmentations bases on a gold standard.
 
 import sys
+import os
 import codecs
 import argparse
 import string
@@ -29,8 +30,6 @@ def create_parser():
         '--merge_ops', '-ops', type=argparse.FileType('r'), default=sys.stdin,
         metavar='PATH',
         help="Ordered list of merge operations that were taken by algo")
-    parser.add_argument("--freq_table", "-ft", type=argparse.FileType('r'),
-        help="Original word list, which inluding restricts scoring to words in that word list.")
 
     return parser
 
@@ -40,26 +39,17 @@ if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
 
-    if args.freq_table:
-        test_words = []
-        for line in args.freq_table:
-            line = line.strip()
-            line_parts = line.split()
-            word = line_parts[1]
-            test_words.append(word)
-
     gold_standard = {}
+    eval_order = []
     for line in args.input:
         line = line.strip()
         line = str(line)
         line_contents = line.split("\t")
         word = line_contents[0]
-        #Including the freq table means that only score segs for words in the freq table.
-        if args.freq_table and word not in test_words:
-            continue
         word_segs = line_contents[1].split(", ")
         word_segs = [seg.split(" ") for seg in word_segs]
         gold_standard[word] = word_segs
+        eval_order.append(word)
     
     merge_operations = []
     for line in args.merge_ops:
@@ -97,10 +87,22 @@ if __name__ == '__main__':
             quick_pairs.pop(pair)
 
     
-    sucess_words = [word for word in segmentations.keys() if segmentations[word] in gold_standard[word]]
-    pdb.set_trace()
-    print("ALL OR NOTHING ACCURACY:")
-    print(len(sucess_words)/len(gold_standard))
+    os.system("mkdir eval_temp")
+    
+    segs_output_obj = open("eval_temp/segs.txt", "w+")
+    for word in eval_order:
+        final_seg = segmentations[word]
+        delimited_seg = " ".join(final_seg)
+        segs_output_obj.write(delimited_seg + '\n')
+    segs_output_obj.close()
+
+    os.system("perl evaluation.perl -desired " + args.input.name + " -suggested eval_temp/segs.txt")
+    os.system("rm -r eval_temp")
+
+
+
+
+
 
     
 
