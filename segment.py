@@ -50,6 +50,9 @@ def create_parser():
     parser.add_argument(
         '--symbols', '-s', action="store",
         help="Number of merge operations to perform")
+    parser.add_argument(
+        '--gamma', '-g', action="store", required=False,
+        help="Value of hyperparameter if doing local optimization")
     
     return parser
 
@@ -72,13 +75,14 @@ def get_vocabulary_freq_table(fobj):
     vocab = Counter()
     missed = 0
     for line in fobj:
+        original_line = line
         line = line.strip()
         line_parts = line.split()
         freq = int(line_parts[0])
         word = line_parts[1]
         if word in word_vectors:
             vocab[word] += freq
-            pure_corpus_obj.write(line + "\n")
+            pure_corpus_obj.write(original_line)
         else:
             missed += 1
             
@@ -353,7 +357,6 @@ if __name__ == '__main__':
     #Main hyperparameters!
     sample_size = 100
     #Only if employing as more than just tie-breaker
-    gamma = 10
     search_scatter = 100
     
     parser = create_parser()
@@ -368,7 +371,10 @@ if __name__ == '__main__':
         tie_break_only = True
     elif mode == 3:
         use_bpe = False
-        tie_break_only = false
+        tie_break_only = False
+
+    if mode == 3:
+        gamma = float(args.gamma)
 
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     segmentations = {}
