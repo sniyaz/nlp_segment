@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     parser = create_parser()
     args = parser.parse_args()
-    power_range = range(-2, 3)
+    power_range = range(0, 5)
     num_iterations = 6000
 
     seen_powers = []

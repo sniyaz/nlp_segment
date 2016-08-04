@@ -41,7 +41,7 @@ def seg_from_line(line, seg_dict):
 
 if __name__ == '__main__':
 
-    include_matches = True
+    include_matches = False
 
     parser = create_parser()
     args = parser.parse_args()

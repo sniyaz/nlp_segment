@@ -149,7 +149,19 @@ def get_set_cohesion(word_set):
     return average_similarity
 
 
+def delta_cache_usable(pair):
+    delta_cache_info = delta_cache[pair]
+    timestamp = delta_cache_info[1]
+    for char in pair:
+        if char in char_change_log and char_change_log[char] > timestamp:
+            return False
+    return True
+
+
 def get_pair_delta(pair):
+    if pair in delta_cache and delta_cache_usable(pair):
+        #print("SAVED!")
+        return delta_cache[pair][0]
     length_delta = -all_freqs[pair]
     old_spread = sigma_cache[pair[0]] + sigma_cache[pair[1]]
     new_spread = 0
@@ -164,23 +176,31 @@ def get_pair_delta(pair):
     new_spread += get_set_cohesion(quick_pairs[pair])
     spread_delta = old_spread - new_spread
 
-    return length_delta + gamma*spread_delta
+    total_delta = length_delta + gamma*spread_delta
+    delta_cache[pair] = (total_delta, i)
+    return total_delta
     
     
 #Updates the quick_pairs and segmentations data structures for a given word.
 def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, \
-    segmentations, freq_changes, update_freq):
+    segmentations, freq_changes, update_caches):
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 < len(segmentations[word]):
         quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
-        if update_freq:
+        if update_caches:
             all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
             freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
+            if (pair[1], segmentations[word][second_index + 1]) in delta_cache:
+                delta_cache.pop((pair[1], segmentations[word][second_index + 1]))
+
     if first_index - 1 >= 0: 
         quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
-        if update_freq:
+        if update_caches:
             all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
             freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
+            if (segmentations[word][first_index - 1], pair[0]) in delta_cache:
+                delta_cache.pop((segmentations[word][first_index - 1], pair[0]))
+
     
     #Update segmentations data structure 
     segmentations[word][first_index] = new_symbol
@@ -192,7 +212,7 @@ def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pa
             quick_pairs[(new_symbol, segmentations[word][second_index])] = set([(word, first_index, second_index)])
         else:
             quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
-        if update_freq:
+        if update_caches:
             all_freqs[(new_symbol, segmentations[word][second_index])] += vocab[word]
             freq_changes[(new_symbol, segmentations[word][second_index])] += vocab[word]
         
@@ -201,7 +221,7 @@ def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pa
             quick_pairs[(segmentations[word][first_index - 1], new_symbol)] = set([(word, first_index - 1 , first_index)])
         else:
             quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
-        if update_freq: 
+        if update_caches: 
             all_freqs[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
             freq_changes[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
     
@@ -234,10 +254,12 @@ def merge_update(pair):
         #Remove the mapping of the word and old symbols from the quick_find structure
         if remove_word_check(word, pair[0]):
             quick_find[pair[0]].remove((word,))
+            char_change_log[pair[0]] = i
         if remove_word_check(word, pair[1]):
             #New edge case in situations like "l" + "l"
             if pair[0] != pair[1]:
                 quick_find[pair[1]].remove((word,))
+                char_change_log[pair[1]] = i
         #Update q_find data structure with new symbol
         if new_symbol not in quick_find:
             quick_find[new_symbol] = set([(word,)])
@@ -329,7 +351,7 @@ def get_next_state():
         for pair in pair_list:
             if pair in seen:
                 continue
-            elif all_freqs[pair] + 2*gamma*3 < best_drop_so_far:
+            elif all_freqs[pair] + gamma*3 < best_drop_so_far:
                 pruned = True
                 break
             #Even if we can't stop completely, there's no point looking at a pair like this. Prune just this one.
@@ -345,10 +367,10 @@ def get_next_state():
         #If we didn't hit the cuttoff point, then we need to expand the cache and keep trying...
         if not pruned:
             refresh_freq_cache(0.5*threshold)
-            print("REFRESHING")
+            #print("REFRESHING")
 
-    print("SPREAD CALCS DONE: " + str(spread_calcs_done))
-    print("BEST DROP: " + str(best_drop_so_far))
+    #print("SPREAD CALCS DONE: " + str(spread_calcs_done))
+    #print("BEST DROP: " + str(best_drop_so_far))
     return best_pair_so_far
 
 
@@ -363,7 +385,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     mode = int(args.mode)
-    if mode == 1:
+    if mode == 1 or mode == 4:
         use_bpe = True
         tie_break_only = True
     elif mode == 2:
@@ -372,6 +394,7 @@ if __name__ == '__main__':
     elif mode == 3:
         use_bpe = False
         tie_break_only = False
+
 
     if mode == 3:
         gamma = float(args.gamma)
@@ -417,6 +440,8 @@ if __name__ == '__main__':
     for char in quick_find:
         sigma_cache[char] = get_set_cohesion(quick_find[char])
 
+    char_change_log = {}
+    delta_cache = {}
 
 
     print("SIZE QUICK FIND")
