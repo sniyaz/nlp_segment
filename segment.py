@@ -113,13 +113,29 @@ def distance(vec1, vec2):
     return np.linalg.norm(difference)
 
 
+def get_segmentations(word_in):
+    word_segmentations = []
+    cuts = []
+    for i in range(0,len(word_in)):
+        cuts.extend(combinations(range(1,len(word_in)),i))
+    for i in cuts:
+        last = 0
+        output = []
+        for j in i:
+            output.append(word_in[last:j])
+            last = j
+        output.append(word_in[last:])
+        word_segmentations.append(output)
+    return word_segmentations
+
+
 def get_mean(sample_set):
     if not sample_set:
         return 0
     
     average = None
     for sample in sample_set:
-        if  average is None:
+        if average is None:
             average = word_vectors[sample[0]]
         else:
             #We only care about the word in the tuple
@@ -179,7 +195,20 @@ def get_pair_delta(pair):
     total_delta = length_delta + gamma*spread_delta
     delta_cache[pair] = (total_delta, i)
     return total_delta
-    
+
+
+def get_tuning_cohesion(word, candidate_seg):
+    cur_cohesion = 0
+    counted_symbols = 0
+    for symbol in candidate_seg:
+        if symbol in mean_cache:
+            cur_cohesion += np.dot(word_vectors[word], mean_cache[symbol][0])
+            counted_symbols += 1
+    if counted_symbols == 0:
+        return 0
+    cur_cohesion = cur_cohesion/counted_symbols
+    return cur_cohesion
+
     
 #Updates the quick_pairs and segmentations data structures for a given word.
 def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, \
@@ -394,10 +423,8 @@ if __name__ == '__main__':
     elif mode == 3:
         use_bpe = False
         tie_break_only = False
-
-
-    if mode == 3:
         gamma = float(args.gamma)
+        
 
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     segmentations = {}
@@ -480,6 +507,51 @@ if __name__ == '__main__':
             update_sigma_cache(best_pair)
 
 
+    #TO-DOOOOO
+    if mode == 4:
+        print("BEGINNING TUNING")
+        mean_cache = {}
+        for char in quick_find:
+            if len(quick_find[char]) > 0:
+                mean_cache[char] = (get_mean(quick_find[char]), len(quick_find[char]))
+
+        i = 0
+        to_tune = list(vocab.keys())
+        to_tune = sorted(to_tune, key=vocab.get)
+        for word in to_tune:
+            print("TUNING OP: " + str(i))
+            old_seg = segmentations[word]
+            candidates = [seg for seg in get_segmentations(word) ]#if len(seg) == len(old_seg)]
+            next_seg = max(candidates, key=lambda x: get_tuning_cohesion(word, x))
+            for symbol in old_seg:
+                if symbol not in next_seg:
+                    new_count = mean_cache[symbol][1] - 1
+                    if new_count == 0:
+                        mean_cache.pop(symbol)
+                    else:
+                        total_mass = mean_cache[symbol][0]*mean_cache[symbol][1]
+                        total_mass -= word_vectors[word]
+                        new_average = total_mass/new_count
+                        mean_cache[symbol] = (new_average, new_count)
+            for symbol in next_seg:
+                if symbol not in old_seg:
+                    if symbol not in mean_cache:
+                        mean_cache[symbol] = (word_vectors[word], 1)
+                    else:
+                        new_count = mean_cache[symbol][1] + 1
+                        total_mass = mean_cache[symbol][0]*mean_cache[symbol][1]
+                        total_mass += word_vectors[word]
+                        new_average = total_mass/new_count
+                        mean_cache[symbol] = (new_average, new_count)
+            
+            segmentations[word] = next_seg
+            i += 1
+
+
+
+    
+    
+    
     #Write out the segmentations of each word in the corpus.
     segs_output_obj = open(args.output + "_segs.txt", "w+")
     to_write = list(vocab.keys())
