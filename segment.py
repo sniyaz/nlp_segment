@@ -279,7 +279,8 @@ def merge_update(pair):
         word, first_index, second_index = involved_words.pop()
 
         core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, True)
-        
+        affected_words.add(word)
+
         #Remove the mapping of the word and old symbols from the quick_find structure
         if remove_word_check(word, pair[0]):
             quick_find[pair[0]].remove((word,))
@@ -336,6 +337,7 @@ def check_cache():
     
 def refresh_freq_cache(new_threshold):
     global threshold
+    freq_cache.clear()
     threshold = new_threshold
     for pair in all_freqs:
         if all_freqs[pair] > threshold:
@@ -403,6 +405,59 @@ def get_next_state():
     return best_pair_so_far
 
 
+def use_tuned_seg(word):
+    if word == "nightstand":
+        pdb.set_trace()
+    old_seg = segmentations[word]
+    candidates = [seg for seg in get_segmentations(word) if len(seg) == len(old_seg)]
+    next_seg = max(candidates, key=lambda x: get_tuning_cohesion(word, x))
+    for symbol in set(old_seg):
+        if symbol not in next_seg:
+            quick_find[symbol].remove((word,))
+            new_count = mean_cache[symbol][1] - 1
+            if new_count == 0:
+                mean_cache.pop(symbol)
+            else:
+                total_mass = mean_cache[symbol][0]*mean_cache[symbol][1]
+                total_mass -= word_vectors[word]
+                new_average = total_mass/new_count
+                mean_cache[symbol] = (new_average, new_count)
+    for symbol in set(next_seg):
+        if symbol not in old_seg:
+            quick_find[symbol].add((word,))
+            if symbol not in mean_cache:
+                mean_cache[symbol] = (word_vectors[word], 1)
+            else:
+                new_count = mean_cache[symbol][1] + 1
+                total_mass = mean_cache[symbol][0]*mean_cache[symbol][1]
+                total_mass += word_vectors[word]
+                new_average = total_mass/new_count
+                mean_cache[symbol] = (new_average, new_count)
+    
+    
+    prev_char = old_seg[0]
+    idx = 0
+    for char in old_seg[1:]:
+        all_freqs[(prev_char, char)] -= vocab[word]
+        quick_pairs[(prev_char, char)].remove((word, idx, idx + 1)) 
+        prev_char = char
+        idx += 1
+    
+    prev_char = next_seg[0]
+    idx = 0
+    for char in next_seg[1:]:
+        all_freqs[(prev_char, char)] += vocab[word]
+        quick_pairs[(prev_char, char)].add((word, idx, idx + 1)) 
+        prev_char = char
+        idx += 1 
+
+    if word == "nightstand":
+        pdb.set_trace()
+
+    segmentations[word] = next_seg
+    
+
+
 if __name__ == '__main__':
     
     #Main hyperparameters!
@@ -414,7 +469,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     mode = int(args.mode)
-    if mode == 1 or mode == 4:
+    if mode == 1: 
         use_bpe = True
         tie_break_only = True
     elif mode == 2:
@@ -424,15 +479,18 @@ if __name__ == '__main__':
         use_bpe = False
         tie_break_only = False
         gamma = float(args.gamma)
-        
+    elif mode == 4:
+        use_bpe = True
+        tie_break_only = True
+        mix_intervals = 1000
 
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     segmentations = {}
     
     #Dict that maps characters to words containing them
-    quick_find = {}
+    quick_find = defaultdict(lambda: set())
     #Dict that maps pairs to words containing them
-    quick_pairs = {}
+    quick_pairs = defaultdict(lambda: set())
     #Cache for speeing up max when finding frequent pairs
     threshold = None
     freq_cache = Counter()
@@ -483,8 +541,31 @@ if __name__ == '__main__':
     num_ties = 0
     num_iterations = int(args.symbols)
     merges_done = []
+    affected_words = set()
+
     #Core algorithm
     for i in range(num_iterations):
+        
+        #If we tune/mix the segmentations every so often
+        if mode == 4:
+            if i != 0 and i % mix_intervals == 0:
+                to_tune = list(affected_words)
+                to_tune = sorted(to_tune, key=vocab.get)
+                mean_cache = {}
+                for char in quick_find:
+                    if len(quick_find[char]) > 0:
+                        mean_cache[char] = (get_mean(quick_find[char]), len(quick_find[char]))
+                j = 0
+                for word in to_tune:
+                    old_seg = segmentations[word]
+                    use_tuned_seg(word)
+                    new_seg = segmentations[word]
+                    print("tuning " + str(j) + " of " + str(len(to_tune)) + ": "  + str(old_seg) + " --> " + str(new_seg))
+                    j += 1
+
+                refresh_freq_cache(threshold)
+                affected_words = set()
+        
         #Look at many merges, and then pick the best one
         if tie_break_only:
             drawn_pairs = draw_frequent_pairs()            
@@ -506,50 +587,6 @@ if __name__ == '__main__':
             #Now that we've picked a pair, update the sigma_cache for future use.
             update_sigma_cache(best_pair)
 
-
-    #TO-DOOOOO
-    if mode == 4:
-        print("BEGINNING TUNING")
-        mean_cache = {}
-        for char in quick_find:
-            if len(quick_find[char]) > 0:
-                mean_cache[char] = (get_mean(quick_find[char]), len(quick_find[char]))
-
-        i = 0
-        to_tune = list(vocab.keys())
-        to_tune = sorted(to_tune, key=vocab.get)
-        for word in to_tune:
-            print("TUNING OP: " + str(i))
-            old_seg = segmentations[word]
-            candidates = [seg for seg in get_segmentations(word) ]#if len(seg) == len(old_seg)]
-            next_seg = max(candidates, key=lambda x: get_tuning_cohesion(word, x))
-            for symbol in old_seg:
-                if symbol not in next_seg:
-                    new_count = mean_cache[symbol][1] - 1
-                    if new_count == 0:
-                        mean_cache.pop(symbol)
-                    else:
-                        total_mass = mean_cache[symbol][0]*mean_cache[symbol][1]
-                        total_mass -= word_vectors[word]
-                        new_average = total_mass/new_count
-                        mean_cache[symbol] = (new_average, new_count)
-            for symbol in next_seg:
-                if symbol not in old_seg:
-                    if symbol not in mean_cache:
-                        mean_cache[symbol] = (word_vectors[word], 1)
-                    else:
-                        new_count = mean_cache[symbol][1] + 1
-                        total_mass = mean_cache[symbol][0]*mean_cache[symbol][1]
-                        total_mass += word_vectors[word]
-                        new_average = total_mass/new_count
-                        mean_cache[symbol] = (new_average, new_count)
-            
-            segmentations[word] = next_seg
-            i += 1
-
-
-
-    
     
     
     #Write out the segmentations of each word in the corpus.
