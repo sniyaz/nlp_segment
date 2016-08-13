@@ -6,7 +6,7 @@ import codecs
 import argparse
 import string
 sys.path.append("../")
-from segment import core_word_update
+from bpe import core_word_update
 from collections import defaultdict, Counter
 
 import pdb
@@ -30,6 +30,9 @@ def create_parser():
         '--merge_ops', '-ops', type=argparse.FileType('r'), default=sys.stdin,
         metavar='PATH',
         help="Ordered list of merge operations that were taken by algo")
+    parser.add_argument(
+        '--symbols', '-s', action="store",
+        help="Number of merge operations to perform.")
 
     return parser
 
@@ -60,19 +63,23 @@ if __name__ == '__main__':
 
 
     segmentations = {}
-    quick_pairs = {}
+    quick_pairs = defaultdict(lambda: set())
+    
     for word in gold_standard:
         #Set up segmentations data structure
-        segmentations[word] = list(word)
-        #Set up the quick_pairs data structure
-        for idx, c in enumerate(word):
-            if idx != len(word) - 1:
-                if (c, word[idx+1]) not in quick_pairs:
-                    quick_pairs[(c, word[idx+1])] = set([(word, idx, idx+1)])
-                else:
-                    quick_pairs[(c, word[idx+1])].add((word, idx, idx+1))
+        seg = list(word)
+        #seg.append("</w>")
+        segmentations[word] = seg
+        #Set up the quick_find data structure
+        for idx, c in enumerate(seg):
+            #Now set up the quick_pairs data structure
+            if idx != len(seg) - 1:
+                quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
     
-
+     
+    #Only do the first n merge operations...
+    merge_operations = merge_operations[:int(args.symbols)]
+    
     for pair in merge_operations:
         new_symbol = "".join(pair)
         #Some of the pairs aren't relevant to the evaluations set...
@@ -93,6 +100,7 @@ if __name__ == '__main__':
     for word in eval_order:
         final_seg = segmentations[word]
         delimited_seg = " ".join(final_seg)
+        delimited_seg = delimited_seg.replace("</w>", "")
         segs_output_obj.write(delimited_seg + '\n')
     segs_output_obj.close()
 

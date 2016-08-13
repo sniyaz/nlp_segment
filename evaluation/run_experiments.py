@@ -4,7 +4,9 @@ import codecs
 import argparse
 import string
 import csv
+import pickle
 import matplotlib.pyplot as plt
+from collections import defaultdict
 
 import pdb
 
@@ -23,7 +25,7 @@ def create_parser():
         help="Target file for training")
     parser.add_argument(
         '--gold_standard', '-gs', action="store",
-        help="Target file for training")
+        help="Target file for evaluation")
     parser.add_argument(
         '--dir', '-d', action="store",
         help="output directory")
@@ -43,34 +45,47 @@ if __name__ == '__main__':
 
     parser = create_parser()
     args = parser.parse_args()
-    num_steps = 10
-    granularity = 200
+    num_retries = 1000
+    max_merges  = 30000
+    granularity = 500
 
     colors = ["r", "b"]
 
-    for mode in [1, 2]:
-        scores = []
-        iterations = []
-        for i in range(1, num_steps+1):
-            num_iterations = i*granularity
-            iterations.append(num_iterations)
+    for mode in [1]:
+        all_results = defaultdict(lambda: [])
+        for i in range(num_retries):
 
-            cur_folder_name = "mode_" + str(mode) + "_" + str(num_iterations)
+            cur_folder_name = "mode_" + str(mode) + "_trial_" + str(i)
             cur_folder_name = os.path.join(args.dir, cur_folder_name)
             os.system("mkdir " + cur_folder_name)
-            os.system("python3 ../segment.py --mode " + str(mode) + " -i " + args.input + " -ft " + \
-            " -o " + os.path.join(cur_folder_name, "exp") +  " -s " + str(num_iterations))
+            os.system("python3 ../bpe.py --mode " + str(mode) + " -i " + args.input + " -ft " + \
+            " -o " + os.path.join(cur_folder_name, "exp") +  " -s " + str(max_merges))
 
-            eval_output_file = os.path.join(cur_folder_name, "eval_output.txt")
-            os.system("python3 evaluate_seg.py -i " + args.gold_standard + " -ops " + os.path.join(cur_folder_name, "exp_merge_ops.txt") \
-            + " > " + eval_output_file)
-            scores.append(extract_fmeasure(eval_output_file))
+            num_merges = granularity
+            while (num_merges <= max_merges):
+                save_folder = os.path.join(cur_folder_name, str(num_merges) + "_merges")
+                os.system("mkdir " + save_folder)
+                eval_output_file = os.path.join(save_folder, "eval_output.txt")
+                os.system("python3 evaluate_seg.py -i " + args.gold_standard + " -ops " + os.path.join(cur_folder_name, "exp_merge_ops.txt") \
+                + " -s " + str(num_merges) + " > " + eval_output_file)
+                all_results[num_merges].append(extract_fmeasure(eval_output_file))
+                num_merges += granularity
+        
+            #Save out the dict of resuts to checkpoint our progress...
+	    ckpt_obj = open(os.path.join(args.dir, "ckpt.txt"), "wb+")
+            pickle.dump(dict(all_results), ckpt_obj)
+            ckpt_obj.close()
+
 
 
         cur_color = colors[mode-1]
-        plt.plot(iterations, scores, cur_color)
+        largest_variance = max(all_results, key = lambda x: max(all_results[x]) - min(all_results[x]))	
+        iterations = [i for i in range(len(all_results[largest_variance]))]
+	scores = all_results[largest_variance]
+	pdb.set_trace()
+	plt.plot(iterations, scores, cur_color)
         plt.plot(iterations, scores, cur_color + "o")
-        plot_filename = os.path.join(args.dir, "mode_" + str(mode) + "_plt.png")
+        plot_filename = os.path.join(args.dir, "mode_" + str(mode) + "_" + str(largest_variance) + "_merges" + "_plt.png")
         plt.savefig(plot_filename)
         plt.clf()
         
