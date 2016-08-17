@@ -2,6 +2,7 @@ import json
 import pickle
 from collections import defaultdict
 from bpe import get_vocabulary, cosine_similarity 
+import networkx as nx 
 
 import pdb
 
@@ -79,6 +80,7 @@ def get_drop_string(from_str, to_str, rule_kind):
       
 def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transforms):
     threshold = 0.5
+    propogation_graph = nx.DiGraph()  
 
     vocab = list(vocabulary.keys())
     #Go from longer words to shorter ones since we apply "drop" rules
@@ -89,14 +91,18 @@ def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transform
         #print(i)
         possible_change = test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vectors)
 	if possible_change:
-	    change_kind, drop_str = possible_change
+	    change_kind, drop_str, parent_word = possible_change
 	    if change_kind == "s":
 	        presegs[word] = [word[:-len(drop_str)], drop_str]
+	        propogation_graph.add_edge(parent_word, word, link= [0])
 	    else:
 	        presegs[word] = [drop_str, word[len(drop_str):]]
+		propogation_graph.add_edge(parent_word, word, link = [1])
 	    print(presegs[word])
-
-        i += 1 
+            #Core of the propogation algorithm!
+	    propogate_to_children(propogation_graph, presegs, word, drop_str, change_kind)
+        
+	i += 1 
    
    
     vocab.sort()
@@ -108,6 +114,35 @@ def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transform
         segs_output_obj.write('\n')
     segs_output_obj.close()
 	        
+
+def propogate_to_children(graph, presegs, word, drop_str, kind) :
+    for child in graph.successors(word):
+        link = graph[word][child]["link"]
+        if kind == "s":
+	    idx = max(link)
+	    segment = presegs[child][idx]
+	    if segment[-len(drop_str):] == drop_str and len(segment) > len(drop_str):
+	        presegs[child][idx] = segment[:-len(drop_str)]
+	        presegs[child].insert(idx + 1, drop_str)
+		link.append(max(link) + 1)
+                propogate_to_children(graph, presegs, child, drop_str, kind)
+	
+	else:
+	    idx = min(link)
+	    segment = presegs[child][idx]
+	    if segment[:len(drop_str)] == drop_str and len(segment) > len(drop_str):
+	        presegs[child][idx] = drop_str
+	        presegs[child].insert(idx + 1, segment[len(drop_str):])
+		link.append(max(link) + 1)
+                propogate_to_children(graph, presegs, child, drop_str, kind)
+	
+    
+
+
+
+
+
+
 
 def test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vectors):
     threshold = 0.5
@@ -148,9 +183,10 @@ def test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vect
 		    #print("from: " + change_data["from"])
 		    #print("to: " + change_data["to"])
 		    #print("drop: " + change_data["drop_str"])
-		    return change_data["kind"], change_data["drop_str"]
+		    return change_data["kind"], change_data["drop_str"], new_string 
     
-    
+   
+
    
 
 
