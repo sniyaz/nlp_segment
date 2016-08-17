@@ -114,8 +114,14 @@ def get_pair_statistics():
     return all_freqs
 
 
-def get_similarity(word1, word2):
-    return np.dot(word_vectors[word1], word_vectors[word2])
+def word_similarity(word1, word2):
+    vec1 = word_vectors[word1]
+    vec2 = word_vectors[word2]
+    return cosine_similarity(vec1, vec2)
+    
+
+def cosine_similarity(vec1, vec2):
+    return np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2))
 
 
 #Euclidean distance between 2 vectors

@@ -35,10 +35,6 @@ if __name__ == '__main__':
         contents = contents[1:]
         contents = [float(i) for i in contents]
         vector = np.asarray(contents)
-        #We want unit vectors!
-        norm = np.linalg.norm(vector)
-        if (norm != 0):
-            vector = vector/norm
         word_vectors[word] = vector
 
     pickle.dump(word_vectors, args.output)
