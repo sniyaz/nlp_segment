@@ -74,22 +74,26 @@ def get_drop_string(from_str, to_str, rule_kind):
     return from_str, to_str
     
 
-def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transforms):
+def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transforms, test_set=None):
     threshold = 0.5
     propogation_graph = nx.DiGraph()  
-
     vocab = list(vocabulary.keys())
-    
-    word = "unobtrusively"
-    
     #Go from longer words to shorter ones since we apply "drop" rules
     vocab = sorted(vocab, key = lambda x: len(x), reverse=True)
+    
     presegs = {}
+    if test_set is None:
+        target_words = vocab
+    else:
+        target_words = sorted(test_set, key = lambda x: len(x), reverse=True)
+
     i = 0
-    #for word in vocab:
-    #DEBUG
-    while True:   
-    #print(i)
+    while target_words:
+        print(i)
+        #Don't change something while you iterate over it!
+        word = target_words[0]
+        target_words = target_words[1:]
+        presegs[word] = [word]
         possible_change = test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vectors)
         if possible_change:
             change_kind, drop_str, parent_word = possible_change
@@ -102,10 +106,10 @@ def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transform
             print(presegs[word])
             #Core of the propogation algorithm!
             propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
-            #DEBUG!!!
-            word = parent_word
-        else:
-            break
+
+            if test_set:
+                target_words.append(parent_word)
+          
         
         i += 1 
    
@@ -113,6 +117,7 @@ def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transform
     
     #DEBUG
     to_write = sorted(list(presegs.keys()), key=lambda x : len(x), reverse=True)
+    return presegs
     
     segs_output_obj = open("debug_temp/" + "pre_segs.txt", "w+")
     for word in to_write:
@@ -150,6 +155,7 @@ def test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vect
         suffix = word[-i:]
         prefix = word[:i]
         possible_changes = suffix_transforms[suffix] + prefix_transforms[prefix]
+        possible_changes = sorted(possible_changes, key = lambda x: len(x["drop_str"]))
         for change_data in possible_changes:
             from_str = change_data["from"]
             to_str = change_data["to"]
@@ -187,7 +193,9 @@ def test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vect
 
 if __name__ == '__main__':
 
-    vocab = get_vocabulary(open("data/europarl/fi_san.txt", "r"))     
+    vocab = get_vocabulary(open("data/europarl/fi_san.txt", "r"))  
+
+    pdb.set_trace()   
         
     test = json.load(open("data/morph_rules.json", "r"))
     prefix_transforms, suffix_transforms = process_json(test)    

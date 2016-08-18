@@ -66,14 +66,14 @@ def get_vocabulary(fobj):
     return vocab
 
 
-def get_vocabulary_freq_table(fobj):
+def get_vocabulary_freq_table(fobj, word_vectors):
     fobj.seek(0)
     #Write out a pure corpus so we know what we trained on. "Pure" means it was in the 300k word vectors.
-    pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
-    exluded_corpus_obj = open(args.output + "_excluded_corpus.txt", "w+") 
+    #pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
+    #exluded_corpus_obj = open(args.output + "_excluded_corpus.txt", "w+") 
     vocab = Counter()
     in_vector_table = list(word_vectors.keys())
-    in_mean = get_mean(set([(word,) for word in in_vector_table]))
+    in_mean = get_mean(set([(word,) for word in in_vector_table]), word_vectors)
     missed = 0
     for line in fobj:
         original_line = line
@@ -82,22 +82,22 @@ def get_vocabulary_freq_table(fobj):
         freq = int(line_parts[0])
         word = line_parts[1]
         vocab[word] += freq
-        if word in word_vectors:
-            pure_corpus_obj.write(original_line)
-        else:
-            #TO-DO: Handle NN thingy
-	    #closest_neighbors = difflib.get_close_matches(word, in_vector_table)
-            #if len(closest_neighbors) > 0:
-            #    closest = closest_neighbors[0]
-            #else:
-            #    closest = "MEAN USED"
-            exluded_corpus_obj.write(original_line) #+ " ---> " + closest + "\n")
-            #Replace missing words with the mean vector for now....
-            word_vectors[word] = in_mean
-            missed += 1
+        # if word in word_vectors:
+        #     pure_corpus_obj.write(original_line)
+        # else:
+        #     #TO-DO: Handle NN thingy
+	    # #closest_neighbors = difflib.get_close_matches(word, in_vector_table)
+        #     #if len(closest_neighbors) > 0:
+        #     #    closest = closest_neighbors[0]
+        #     #else:
+        #     #    closest = "MEAN USED"
+        #     exluded_corpus_obj.write(original_line) #+ " ---> " + closest + "\n")
+        #     #Replace missing words with the mean vector for now....
+        #     word_vectors[word] = in_mean
+        #     missed += 1
             
-    print("MISSED: ")
-    print(missed)
+    # print("MISSED: ")
+    # print(missed)
     return vocab
 
 
@@ -130,7 +130,7 @@ def distance(vec1, vec2):
     return np.linalg.norm(difference)
 
 
-def get_mean(sample_set):
+def get_mean(sample_set, word_vectors):
     if not sample_set:
         return 0
     
@@ -146,7 +146,7 @@ def get_mean(sample_set):
     return average
 
 
-def get_set_cohesion(word_set):
+def get_set_cohesion(word_set, word_vectors):
     involved_words = [i[0] for i in word_set]
     pair_words = set()
     for word in involved_words:
@@ -154,7 +154,7 @@ def get_set_cohesion(word_set):
     if len(pair_words) == 0:
         return 0
     #Center of the new symbol's vectors
-    pair_mean = get_mean(pair_words)
+    pair_mean = get_mean(pair_words, word_vectors)
     #pdb.set_trace()
     average_similarity = 0
 
@@ -329,7 +329,7 @@ if __name__ == '__main__':
     threshold = None
     freq_cache = Counter()
     if args.ft:
-        vocab = get_vocabulary_freq_table(args.input)
+        vocab = get_vocabulary_freq_table(args.input, word_vectors)
     else:
         vocab = get_vocabulary(args.input)
 
@@ -372,7 +372,7 @@ if __name__ == '__main__':
         else:
             if is_true_tie(drawn_pairs):
                 num_ties += 1
-            best_pair = max(drawn_pairs, key=lambda x: get_set_cohesion(quick_pairs[x]))
+            best_pair = max(drawn_pairs, key=lambda x: get_set_cohesion(quick_pairs[x], word_vectors))
               
     
         sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))                           

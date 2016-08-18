@@ -37,31 +37,29 @@ def create_parser():
     return parser
 
 
-if __name__ == '__main__':
+def get_gs_data(input_obj, gold_standard, eval_order):
+    with input_obj as input_file:
+        for line in input_file:
+            line = line.strip()
+            line = str(line)
+            line_contents = line.split("\t")
+            word = line_contents[0]
+            word_segs = line_contents[1].split(", ")
+            word_segs = [seg.split(" ") for seg in word_segs]
+            gold_standard[word] = word_segs
+            eval_order.append(word)
 
-    parser = create_parser()
-    args = parser.parse_args()
 
-    gold_standard = {}
-    eval_order = []
-    for line in args.input:
-        line = line.strip()
-        line = str(line)
-        line_contents = line.split("\t")
-        word = line_contents[0]
-        word_segs = line_contents[1].split(", ")
-        word_segs = [seg.split(" ") for seg in word_segs]
-        gold_standard[word] = word_segs
-        eval_order.append(word)
-    
+
+
+def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
     merge_operations = []
-    for line in args.merge_ops:
+    for line in merge_ops_obj:
         line = line.strip()
         line = str(line)
         pair = tuple(line.split(" "))
         merge_operations.append(pair)
-
-
+    
     segmentations = {}
     quick_pairs = defaultdict(lambda: set())
     
@@ -76,9 +74,8 @@ if __name__ == '__main__':
             if idx != len(seg) - 1:
                 quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
     
-     
     #Only do the first n merge operations...
-    merge_operations = merge_operations[:int(args.symbols)]
+    merge_operations = merge_operations[:int(num_symbols)]
     
     for pair in merge_operations:
         new_symbol = "".join(pair)
@@ -93,9 +90,11 @@ if __name__ == '__main__':
             
             quick_pairs.pop(pair)
 
-    
+    return segmentations
+
+
+def call_evaluation(segmentations, eval_order, gold_standard_path):
     os.system("mkdir eval_temp")
-    
     segs_output_obj = open("eval_temp/segs.txt", "w+")
     for word in eval_order:
         final_seg = segmentations[word]
@@ -104,8 +103,25 @@ if __name__ == '__main__':
         segs_output_obj.write(delimited_seg + '\n')
     segs_output_obj.close()
 
-    os.system("perl evaluation.perl -desired " + args.input.name + " -suggested eval_temp/segs.txt")
+    os.system("perl evaluation.perl -desired " + gold_standard_path + " -suggested eval_temp/segs.txt")
+    
+    pdb.set_trace()
+
     os.system("rm -r eval_temp")
+
+
+if __name__ == '__main__':
+
+    parser = create_parser()
+    args = parser.parse_args()
+
+    gold_standard = {}
+    eval_order = []
+    get_gs_data(args.input, gold_standard, eval_order)
+    
+    segmentations = apply_merge_ops(gold_standard, args.merge_ops, args.symbols)
+
+    call_evaluation(segmentations, eval_order, args.input.name)
 
 
 
