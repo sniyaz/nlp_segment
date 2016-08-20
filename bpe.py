@@ -74,6 +74,7 @@ def get_vocabulary_freq_table(fobj, word_vectors):
     vocab = Counter()
     in_vector_table = list(word_vectors.keys())
     in_mean = get_mean(set([(word,) for word in in_vector_table]), word_vectors)
+    vect_length = in_mean.shape[0]
     missed = 0
     for line in fobj:
         original_line = line
@@ -82,22 +83,9 @@ def get_vocabulary_freq_table(fobj, word_vectors):
         freq = int(line_parts[0])
         word = line_parts[1]
         vocab[word] += freq
-        # if word in word_vectors:
-        #     pure_corpus_obj.write(original_line)
-        # else:
-        #     #TO-DO: Handle NN thingy
-	    # #closest_neighbors = difflib.get_close_matches(word, in_vector_table)
-        #     #if len(closest_neighbors) > 0:
-        #     #    closest = closest_neighbors[0]
-        #     #else:
-        #     #    closest = "MEAN USED"
-        #     exluded_corpus_obj.write(original_line) #+ " ---> " + closest + "\n")
-        #     #Replace missing words with the mean vector for now....
-        #     word_vectors[word] = in_mean
-        #     missed += 1
-            
-    # print("MISSED: ")
-    # print(missed)
+        if word not in word_vectors:
+            word_vectors[word] = np.zeros(vect_length)
+
     return vocab
 
 

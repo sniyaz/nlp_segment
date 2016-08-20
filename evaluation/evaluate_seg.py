@@ -92,6 +92,16 @@ def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
     return segmentations
 
 
+def extract_fmeasure(result_filename):
+    result_obj = open(result_filename, "r")
+    for line in result_obj:
+        line = line.strip()
+        line = line.split("  ")
+        if line[0] == "F-measure:":
+            return float(line[1][:-1])
+    result_obj.close()
+
+
 def call_evaluation(segmentations, eval_order, gold_standard_path, result_dir=None):
     if result_dir is None:
         os.system("mkdir eval_temp")
@@ -106,12 +116,16 @@ def call_evaluation(segmentations, eval_order, gold_standard_path, result_dir=No
     segs_output_obj.close()
 
     if result_dir is None:
-        os.system("perl evaluation.perl -desired " + gold_standard_path + " -suggested eval_temp/segs.txt")
+        os.system("perl evaluation.perl -desired " + gold_standard_path + \
+            " -suggested eval_temp/segs.txt > eval_temp/eval_output.txt")
+        
         os.system("rm -r eval_temp")
     else:
         os.system("perl evaluation.perl -desired " + gold_standard_path + " -suggested " + str(os.path.join(result_dir, "segs.txt")) \
-         + " > " + os.path.join(result_dir, "eval_output.txt"))
+            + " > " + os.path.join(result_dir, "eval_output.txt"))
+        fmeasure = extract_fmeasure(os.path.join(result_dir, "eval_output.txt"))
 
+    return fmeasure
 
 
 if __name__ == '__main__':
