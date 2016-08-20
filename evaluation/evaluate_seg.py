@@ -38,16 +38,15 @@ def create_parser():
 
 
 def get_gs_data(input_obj, gold_standard, eval_order):
-    with input_obj as input_file:
-        for line in input_file:
-            line = line.strip()
-            line = str(line)
-            line_contents = line.split("\t")
-            word = line_contents[0]
-            word_segs = line_contents[1].split(", ")
-            word_segs = [seg.split(" ") for seg in word_segs]
-            gold_standard[word] = word_segs
-            eval_order.append(word)
+    for line in input_obj:
+        line = line.strip()
+        line = str(line)
+        line_contents = line.split("\t")
+        word = line_contents[0]
+        word_segs = line_contents[1].split(", ")
+        word_segs = [seg.split(" ") for seg in word_segs]
+        gold_standard[word] = word_segs
+        eval_order.append(word)
 
 
 
@@ -93,9 +92,12 @@ def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
     return segmentations
 
 
-def call_evaluation(segmentations, eval_order, gold_standard_path):
-    os.system("mkdir eval_temp")
-    segs_output_obj = open("eval_temp/segs.txt", "w+")
+def call_evaluation(segmentations, eval_order, gold_standard_path, result_dir=None):
+    if result_dir is None:
+        os.system("mkdir eval_temp")
+        segs_output_obj = open("eval_temp/segs.txt", "w+")
+    else:
+        segs_output_obj = open(os.path.join(result_dir, "segs.txt"), "w+")
     for word in eval_order:
         final_seg = segmentations[word]
         delimited_seg = " ".join(final_seg)
@@ -103,11 +105,13 @@ def call_evaluation(segmentations, eval_order, gold_standard_path):
         segs_output_obj.write(delimited_seg + '\n')
     segs_output_obj.close()
 
-    os.system("perl evaluation.perl -desired " + gold_standard_path + " -suggested eval_temp/segs.txt")
-    
-    pdb.set_trace()
+    if result_dir is None:
+        os.system("perl evaluation.perl -desired " + gold_standard_path + " -suggested eval_temp/segs.txt")
+        os.system("rm -r eval_temp")
+    else:
+        os.system("perl evaluation.perl -desired " + gold_standard_path + " -suggested " + str(os.path.join(result_dir, "segs.txt")) \
+         + " > " + os.path.join(result_dir, "eval_output.txt"))
 
-    os.system("rm -r eval_temp")
 
 
 if __name__ == '__main__':

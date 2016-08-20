@@ -39,6 +39,7 @@ def extract_fmeasure(result_filename):
         line = line.split("  ")
         if line[0] == "F-measure:":
             return float(line[1][:-1])
+    result_obj.close()
 
 
 if __name__ == '__main__':
@@ -72,7 +73,7 @@ if __name__ == '__main__':
                 num_merges += granularity
         
             #Save out the dict of resuts to checkpoint our progress...
-	    ckpt_obj = open(os.path.join(args.dir, "ckpt.txt"), "wb+")
+            ckpt_obj = open(os.path.join(args.dir, "ckpt.txt"), "wb+")
             pickle.dump(dict(all_results), ckpt_obj)
             ckpt_obj.close()
 
@@ -81,9 +82,9 @@ if __name__ == '__main__':
         cur_color = colors[mode-1]
         largest_variance = max(all_results, key = lambda x: max(all_results[x]) - min(all_results[x]))	
         iterations = [i for i in range(len(all_results[largest_variance]))]
-	scores = all_results[largest_variance]
-	pdb.set_trace()
-	plt.plot(iterations, scores, cur_color)
+        scores = all_results[largest_variance]
+        pdb.set_trace()
+        plt.plot(iterations, scores, cur_color)
         plt.plot(iterations, scores, cur_color + "o")
         plot_filename = os.path.join(args.dir, "mode_" + str(mode) + "_" + str(largest_variance) + "_merges" + "_plt.png")
         plt.savefig(plot_filename)
