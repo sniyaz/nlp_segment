@@ -8,8 +8,8 @@ import sys
 import pdb
 
 def process_json(json_data):
-    prefix_transforms = defaultdict(lambda: [])
-    suffix_transforms = defaultdict(lambda: [])
+    morph_transforms = defaultdict( lambda: defaultdict(lambda: []) )
+    
     for change in json_data:
         #Don't care about empty rules like this...
         if "transformations" not in change:
@@ -28,31 +28,24 @@ def process_json(json_data):
         if rule_inverted:
             from_str, to_str = to_str, from_str
         from_str, to_str = get_drop_string(from_str, to_str, rule_kind)
-        drop_string = from_str
 
         transformations = sorted(change["transformations"], key=lambda x: float(x["cosine"]), reverse=True)
         if rule_inverted:
-            transformations = [(trans["rule"]["output"], trans["rule"]["input"]) for trans in transformations]
+            direction_words = set([(trans["direction"]["output"], trans["direction"]["input"]) for trans in transformations])
         else:
-            transformations = [(trans["rule"]["input"], trans["rule"]["output"]) for trans in transformations] 
+            direction_words = set([(trans["direction"]["input"], trans["direction"]["output"]) for trans in transformations])
+        
+        direction_words = list(direction_words)
+        direction_words = [(to_str,) + tup for tup in direction_words]
 
-        change_data["from"] = from_str
-        change_data["to"] = to_str
-        change_data["kind"] = rule_kind
-        change_data["drop_str"] = drop_string
-        change_data["transforms"] = transformations
-
-        if rule_kind == "s":
-            suffix_transforms[drop_string].append(change_data)
-        else:
-           prefix_transforms[drop_string].append(change_data)
+        morph_transforms[from_str][rule_kind].extend(direction_words)
     
-    #pdb.set_trace()
-    for suffix in suffix_transforms:
-        suffix_transforms[suffix] = sorted(suffix_transforms[suffix], key=lambda x: len(x["to"]))
-    for prefix in prefix_transforms:
-        prefix_transforms[prefix]= sorted(prefix_transforms[prefix], key=lambda x: len(x["to"]))
-    return prefix_transforms, suffix_transforms
+    #Heuristic: Try transforms that lead to shorter words first.
+    for drop_string in morph_transforms:
+        morph_transforms[drop_string]["s"] = sorted(morph_transforms[drop_string]["s"], key=lambda x: len(x[0]))
+        morph_transforms[drop_string]["p"] = sorted(morph_transforms[drop_string]["p"], key=lambda x: len(x[0]))
+
+    return morph_transforms
 
 
 def get_drop_string(from_str, to_str, rule_kind):
@@ -74,14 +67,13 @@ def get_drop_string(from_str, to_str, rule_kind):
     return from_str, to_str
     
 
-def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transforms, test_set=None):
-    threshold = 0.5
+def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
     propogation_graph = nx.DiGraph()  
     vocab = list(vocabulary.keys())
     #Go from longer words to shorter ones since we apply "drop" rules
     vocab = sorted(vocab, key = lambda x: len(x), reverse=True)
-    
     presegs = {}
+
     if test_set is None:
         target_words = vocab
     else:
@@ -89,12 +81,12 @@ def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transform
 
     i = 0
     while target_words:
-        print(i)
+        #rint(i)
         #Don't change something while you iterate over it!
         word = target_words[0]
         target_words = target_words[1:]
         presegs[word] = [word]
-        possible_change = test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vectors)
+        possible_change = test_transforms(word, morph_transforms, vocab, word_vectors)
         if possible_change:
             change_kind, drop_str, parent_word = possible_change
             if change_kind == "s":
@@ -112,11 +104,9 @@ def compute_preseg(vocabulary, word_vectors, prefix_transforms, suffix_transform
           
         
         i += 1 
-   
-    #to_write = sorted(vocab)
-    
+       
     #DEBUG
-    to_write = sorted(list(presegs.keys()), key=lambda x : len(x), reverse=True)
+    to_write = sorted(list(presegs.keys()), key=lambda x: len(x), reverse=True)
     return presegs
     
     segs_output_obj = open("debug_temp/" + "pre_segs.txt", "w+")
@@ -148,58 +138,47 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
                 propogate_to_children(graph, presegs, child, idx, drop_str, kind)
 
 
-def test_transforms(word, prefix_transforms, suffix_transforms, vocab, word_vectors):
-    threshold = 0.4 
+def test_transforms(word, morph_transforms, vocab, word_vectors):
+    threshold = 0.5
     
     for i in range(1, len(word)):
         suffix = word[-i:]
         prefix = word[:i]
-        possible_changes = suffix_transforms[suffix] + prefix_transforms[prefix]
-        possible_changes = sorted(possible_changes, key = lambda x: len(x["drop_str"]))
-        for change_data in possible_changes:
-            from_str = change_data["from"]
-            to_str = change_data["to"]
-        
-            if change_data["kind"] == "s":
-                #Gotta check that you can actually apply the transform...
-                if word[-len(from_str):] != from_str:
+
+        for kind, direction_words in zip(["s", "p"], [morph_transforms[suffix]["s"], morph_transforms[prefix]["p"]]):
+            for transform in direction_words:                
+                to_str = transform[0]
+
+                if kind == "s":
+                    new_string = word[:-i] + to_str
+                else:
+                    new_string = to_str + word[i:]
+                trans_from = transform[1]
+                trans_to = transform[2]
+
+                if new_string not in vocab or trans_from not in vocab or trans_to not in vocab:
                     continue
-                new_string = word[:-len(from_str)] + to_str
-            else:
-                #Gotta check that you can actually apply the transform...
-                if word[:len(from_str)] != from_str:
-                    continue
-                new_string = to_str + word[len(from_str):]
-            
-            if new_string not in vocab:
-                 continue
-                
-            for transform in change_data["transforms"]:
-                trans_from = transform[0]
-                trans_to = transform[1]
-                if trans_from not in vocab or trans_to not in vocab:
-                    continue
+
                 direction_vector = word_vectors[trans_to] - word_vectors[trans_from]
                 new_vector = word_vectors[word] + direction_vector
+                #print(cosine_similarity(word_vectors[new_string], new_vector))
                 if cosine_similarity(word_vectors[new_string], new_vector) > threshold:
-                    #pdb.set_trace()
                     print(word + " ---> " + new_string)
-                    #print("from: " + change_data["from"])
-                    #print("to: " + change_data["to"])
-                    #print("drop: " + change_data["drop_str"])
-                    return change_data["kind"], change_data["drop_str"], new_string 
+                    if kind == "s":
+                        return "s", suffix, new_string 
+                    else:
+                        return "p", prefix, new_string
         
    
 
 if __name__ == '__main__':
 
     vocab = get_vocabulary(open("data/europarl/fi_san.txt", "r"))  
-
-    pdb.set_trace()   
         
     test = json.load(open("data/morph_rules.json", "r"))
-    prefix_transforms, suffix_transforms = process_json(test)    
+    morph_transforms = process_json(test)    
+    
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
        
-    compute_preseg(vocab, word_vectors, prefix_transforms, suffix_transforms)
+    compute_preseg(vocab, word_vectors, morph_transforms, ["characteristically"])
 

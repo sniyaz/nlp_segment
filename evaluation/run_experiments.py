@@ -60,7 +60,7 @@ if __name__ == '__main__':
                 save_folder = os.path.join(cur_folder_name, str(num_merges) + "_merges")
                 os.system("mkdir " + save_folder)
 
-                merge_ops_obj = open(os.path.join(cur_folder_name, "exp_merge_ops.txt"))
+                merge_ops_obj = open(os.path.join(cur_folder_name, "exp_merge_ops.txt"), "r")
                 gold_standard_obj = open(args.gold_standard, "r")
                 gold_standard = {}
                 eval_order = []

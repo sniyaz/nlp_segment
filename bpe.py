@@ -83,10 +83,30 @@ def get_vocabulary_freq_table(fobj, word_vectors):
         freq = int(line_parts[0])
         word = line_parts[1]
         vocab[word] += freq
-        if word not in word_vectors:
-            word_vectors[word] = np.zeros(vect_length)
+        #if word not in word_vectors:
+            #word_vectors[word] = np.zeros(vect_length)
 
     return vocab
+
+
+def apply_presegs(vocab, presegs):
+    for word in presegs:
+        if len(presegs[word]) > 1:
+            freq = vocab[word]
+            vocab[word] -= freq
+            for part in presegs[word]:
+                vocab[part] += freq
+    return vocab
+
+
+def recover_preseg_boundary(vocab, presegs, segmentations_in):
+    segmentations_out = {}
+    for word in presegs:
+        final_seg = []
+        for part in presegs[word]:
+            final_seg.extend(segmentations_in[part])
+        segmentations_out[word] = final_seg
+    return segmentations_out
 
 
 #Needed if doing BPE with tie breaking. Big table of all pair frequencies
@@ -300,12 +320,6 @@ if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
 
-    mode = int(args.mode)
-    if mode == 1: 
-        use_bpe = True
-    elif mode == 2:
-        use_bpe = False
-
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     segmentations = {}
     
@@ -320,6 +334,24 @@ if __name__ == '__main__':
         vocab = get_vocabulary_freq_table(args.input, word_vectors)
     else:
         vocab = get_vocabulary(args.input)
+    
+    mode = int(args.mode)
+    #Vanilla
+    if mode == 1: 
+        use_bpe = True
+    #Tie Breaking
+    elif mode == 2:
+        use_bpe = False
+    #Morpology Pre-Segmentation
+    elif mode == 3:
+        use_bpe = True
+        with open("../debug_temp/presegs_ckpt.txt", "rb") as checkpoint_file:
+            presegs = pickle.load(checkpoint_file)
+        vocab = apply_presegs(vocab, presegs)
+        for word in list(vocab.keys()):
+            if vocab[word] == 0:
+                vocab.pop(word)
+            
 
     #Each words starts totally segmented..
     #Set up to the data structures
