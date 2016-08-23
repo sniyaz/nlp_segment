@@ -65,7 +65,7 @@ def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
     for word in gold_standard:
         #Set up segmentations data structure
         seg = list(word)
-        #seg.append("</w>")
+        seg.append("</w>")
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):
@@ -111,6 +111,7 @@ def call_evaluation(segmentations, eval_order, gold_standard_path, result_dir=No
     for word in eval_order:
         final_seg = segmentations[word]
         delimited_seg = " ".join(final_seg)
+        delimited_seg = delimited_seg.replace(" </w>", "")
         delimited_seg = delimited_seg.replace("</w>", "")
         segs_output_obj.write(delimited_seg + '\n')
     segs_output_obj.close()

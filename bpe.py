@@ -69,8 +69,8 @@ def get_vocabulary(fobj):
 def get_vocabulary_freq_table(fobj, word_vectors):
     fobj.seek(0)
     #Write out a pure corpus so we know what we trained on. "Pure" means it was in the 300k word vectors.
-    #pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
-    #exluded_corpus_obj = open(args.output + "_excluded_corpus.txt", "w+") 
+    # pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
+    # exluded_corpus_obj = open(args.output + "_excluded_corpus.txt", "w+") 
     vocab = Counter()
     in_vector_table = list(word_vectors.keys())
     in_mean = get_mean(set([(word,) for word in in_vector_table]), word_vectors)
@@ -83,8 +83,13 @@ def get_vocabulary_freq_table(fobj, word_vectors):
         freq = int(line_parts[0])
         word = line_parts[1]
         vocab[word] += freq
-        #if word not in word_vectors:
-            #word_vectors[word] = np.zeros(vect_length)
+        if word not in word_vectors:
+            word_vectors[word] = in_mean
+            #print("SCAM")
+        #     exluded_corpus_obj.write(original_line)
+        # else:
+        #     pure_corpus_obj.write(original_line)
+            
 
     return vocab
 
@@ -358,7 +363,7 @@ if __name__ == '__main__':
     for word in vocab:
         #Set up segmentations data structure
         seg = list(word)
-        #seg.append("</w>")
+        seg.append("</w>")
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):
