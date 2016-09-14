@@ -49,8 +49,6 @@ def get_gs_data(input_obj, gold_standard, eval_order):
         eval_order.append(word)
 
 
-
-
 def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
     merge_operations = []
     for line in merge_ops_obj:
@@ -65,7 +63,7 @@ def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
     for word in gold_standard:
         #Set up segmentations data structure
         seg = list(word)
-        seg.append("</w>")
+        #seg.append("</w>")
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):

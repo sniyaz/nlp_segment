@@ -4,6 +4,10 @@ from collections import defaultdict
 from bpe import get_vocabulary, cosine_similarity 
 import networkx as nx 
 import sys
+import os
+
+sys.path.append("./evaluation/")
+from evaluate_seg import get_gs_data
 
 import pdb
 
@@ -107,7 +111,7 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
        
     #DEBUG
     to_write = sorted(list(presegs.keys()), key=lambda x: len(x), reverse=True)
-    return presegs
+    #return presegs
     
     segs_output_obj = open("debug_temp/" + "pre_segs.txt", "w+")
     for word in to_write:
@@ -116,6 +120,9 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
         segs_output_obj.write(word + ": " + delimited_seg)
         segs_output_obj.write('\n')
     segs_output_obj.close()
+
+    with open(os.path.join("debug_temp/", "presegs_ckpt.txt"), "wb+") as checkpoint_file:
+        pickle.dump(presegs, checkpoint_file)
             
 
 def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
@@ -139,7 +146,7 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
 
 
 def test_transforms(word, morph_transforms, vocab, word_vectors):
-    threshold = 0.5
+    threshold = 0.3
     
     for i in range(1, len(word)):
         suffix = word[-i:]
@@ -179,6 +186,13 @@ if __name__ == '__main__':
     morph_transforms = process_json(test)    
     
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
-       
-    compute_preseg(vocab, word_vectors, morph_transforms, ["characteristically"])
+
+    #If prepping experiment
+    gold_standard = {}
+    eval_order = []
+    get_gs_data(open("/Users/Sherdil/Research/NLP/nlp_segment/data/seg_eval/goldstdsample.eng.txt", "r"), gold_standard, eval_order) 
+    pdb.set_trace()  
+    compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
+
+    #compute_preseg(vocab, word_vectors, morph_transforms)
 

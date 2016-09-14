@@ -36,6 +36,10 @@ def create_parser():
         metavar='PATH',
         help="Corpus for evaluation")
     parser.add_argument(
+        '--pre_segs', '-ps', type=argparse.FileType('rb'), default=sys.stdin,
+        metavar='PATH',
+        help="Pre-seg checkpoint file")
+    parser.add_argument(
         '--output', '-o', action="store",
         metavar='PATH',
         help="Output dir")
@@ -54,21 +58,15 @@ if __name__ == '__main__':
     eval_order = []
     get_gs_data(args.input, gold_standard, eval_order)
 
-    with open("../debug_temp/presegs_ckpt.txt", "rb") as checkpoint_file:
-        presegs = pickle.load(checkpoint_file)
-    #presegs = compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
-    #with open(os.path.join(args.output, "presegs_ckpt.txt"), "wb+") as checkpoint_file:
-        #pickle.dump(presegs, checkpoint_file)
-
-    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
+    presegs = pickle.load(args.pre_segs)
+ 
+    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/cleaned_vectors.txt", "rb"))
     vocab = get_vocabulary_freq_table(args.corpus, word_vectors)  
     segmented_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
     test = json.load(open("../data/morph_rules.json", "r"))
-    morph_transforms = process_json(test) 
-
     
-    os.system("python3 ../bpe.py --mode 3 -i " + args.corpus.name + " -ft " + \
-    " -o " + os.path.join(args.output, "preseg") +  " -s " + str(max_merges))
+    # os.system("python3 ../bpe.py --mode 3 -i " + args.corpus.name + " -ft " + \
+    # " -o " + os.path.join(args.output, "preseg") +  " -s " + str(max_merges))
 
     os.system("python3 ../bpe.py --mode 1 -i " + args.corpus.name + " -ft " + \
     " -o " + os.path.join(args.output, "base") +  " -s " + str(max_merges))

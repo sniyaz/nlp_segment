@@ -32,10 +32,12 @@ if __name__ == '__main__':
     for line in args.input:
         try:
             contents = [i for i in line.split()]
-            word = contents[0]
-            contents = contents[1:]
-            contents = [0.0 if i == "." else float(i) for i in contents]
-            vector = np.asarray(contents)
+            vector = contents[-300:]
+            vector = [0.0 if i == "." else float(i) for i in vector]
+            vector = np.asarray(vector)
+
+            contents = contents[:-300]
+            word = "".join(contents)
             word_vectors[word] = vector
         except Exception as ec:
             pdb.set_trace()

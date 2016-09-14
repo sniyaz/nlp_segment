@@ -72,25 +72,16 @@ def get_vocabulary_freq_table(fobj, word_vectors):
     # pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
     # exluded_corpus_obj = open(args.output + "_excluded_corpus.txt", "w+") 
     vocab = Counter()
-    in_vector_table = list(word_vectors.keys())
-    in_mean = get_mean(set([(word,) for word in in_vector_table]), word_vectors)
-    vect_length = in_mean.shape[0]
-    missed = 0
     for line in fobj:
         original_line = line
         line = line.strip()
         line_parts = line.split()
+        if len(line_parts) != 2:
+            continue
         freq = int(line_parts[0])
         word = line_parts[1]
         vocab[word] += freq
-        if word not in word_vectors:
-            word_vectors[word] = in_mean
-            #print("SCAM")
-        #     exluded_corpus_obj.write(original_line)
-        # else:
-        #     pure_corpus_obj.write(original_line)
-            
-
+       
     return vocab
 
 
@@ -350,7 +341,7 @@ if __name__ == '__main__':
     #Morpology Pre-Segmentation
     elif mode == 3:
         use_bpe = True
-        with open("../debug_temp/presegs_ckpt.txt", "rb") as checkpoint_file:
+        with open("../debug_temp/all_presegs_ckpt.txt", "rb") as checkpoint_file:
             presegs = pickle.load(checkpoint_file)
         vocab = apply_presegs(vocab, presegs)
         for word in list(vocab.keys()):
@@ -363,7 +354,7 @@ if __name__ == '__main__':
     for word in vocab:
         #Set up segmentations data structure
         seg = list(word)
-        seg.append("</w>")
+        #seg.append("</w>")
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):
