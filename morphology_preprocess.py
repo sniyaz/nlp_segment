@@ -126,23 +126,31 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
             
 
 def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
-    for child in graph.successors(word):
-        link = graph[word][child]["link"]
-        idx = link[prev_idx]
-        segment = presegs[child][idx]
-        if kind == "s":
-            if segment[-len(drop_str):] == drop_str and len(segment) > len(drop_str):
-                presegs[child][idx] = segment[:-len(drop_str)]
-                presegs[child].insert(idx + 1, drop_str)
-                link.append(max(link) + 1)
-                propogate_to_children(graph, presegs, child, idx, drop_str, kind)
-    
-        else:
-            if segment[:len(drop_str)] == drop_str and len(segment) > len(drop_str):
-                presegs[child][idx] = drop_str
-                presegs[child].insert(idx + 1, segment[len(drop_str):])
-                link.append(max(link) + 1)
-                propogate_to_children(graph, presegs, child, idx, drop_str, kind)
+    try:
+        for child in graph.successors(word):
+            link = graph[word][child]["link"]
+            #BUG FIX: Simtimes things get propagated in one word but not another, meaning link indicies may not line up.
+            if len(link) <= prev_idx:
+                continue
+            idx = link[prev_idx]
+            segment = presegs[child][idx]
+            if kind == "s":
+                if segment[-len(drop_str):] == drop_str and len(segment) > len(drop_str):
+                    presegs[child][idx] = segment[:-len(drop_str)]
+                    presegs[child].insert(idx + 1, drop_str)
+                    link.append(max(link) + 1)
+                    propogate_to_children(graph, presegs, child, idx, drop_str, kind)
+        
+            else:
+                if segment[:len(drop_str)] == drop_str and len(segment) > len(drop_str):
+                    presegs[child][idx] = drop_str
+                    presegs[child].insert(idx + 1, segment[len(drop_str):])
+                    link.append(max(link) + 1)
+                    propogate_to_children(graph, presegs, child, idx, drop_str, kind)
+    except Exception as e:
+        pdb.set_trace()
+
+
 
 
 def test_transforms(word, morph_transforms, vocab, word_vectors):
@@ -190,8 +198,7 @@ if __name__ == '__main__':
     #If prepping experiment
     gold_standard = {}
     eval_order = []
-    get_gs_data(open("/Users/Sherdil/Research/NLP/nlp_segment/data/seg_eval/goldstdsample.eng.txt", "r"), gold_standard, eval_order) 
-    pdb.set_trace()  
+    get_gs_data(open("/Users/Sherdil/Research/NLP/nlp_segment/data/seg_eval/gs_corpus_only.txt", "r"), gold_standard, eval_order) 
     compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
 
     #compute_preseg(vocab, word_vectors, morph_transforms)

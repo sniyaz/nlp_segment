@@ -64,6 +64,7 @@ if __name__ == '__main__':
 
     clean_corpus = open(os.path.join(args.output, "pure_corpus.txt"), "w+")
     clean_gold_standard = open(os.path.join(args.output, "gs_corpus_only.txt"), "w+")
+    clean_gold_standard_wordlist = open(os.path.join(args.output, "gs_clean_wordlist.txt"), "w+")
 
     args.corpus.seek(0)
     for line in args.corpus:
@@ -83,6 +84,7 @@ if __name__ == '__main__':
         line_contents = line.split("\t")
         word = line_contents[0]
         if word in vocab:
+            clean_gold_standard_wordlist.write(word+ "\n")
             word_segs = line_contents[1].split(", ")
             word_segs = [seg.split(" ") for seg in word_segs]
             word_segs = [remove_colons(seg) for seg in word_segs]
@@ -93,6 +95,7 @@ if __name__ == '__main__':
    
     clean_corpus.close()
     clean_gold_standard.close()
+    clean_gold_standard_wordlist.close()
             
 
 

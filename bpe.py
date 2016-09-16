@@ -341,7 +341,7 @@ if __name__ == '__main__':
     #Morpology Pre-Segmentation
     elif mode == 3:
         use_bpe = True
-        with open("../debug_temp/all_presegs_ckpt.txt", "rb") as checkpoint_file:
+        with open("../debug_temp/presegs_ckpt.txt", "rb") as checkpoint_file:
             presegs = pickle.load(checkpoint_file)
         vocab = apply_presegs(vocab, presegs)
         for word in list(vocab.keys()):

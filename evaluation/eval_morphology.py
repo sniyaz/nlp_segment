@@ -60,13 +60,13 @@ if __name__ == '__main__':
 
     presegs = pickle.load(args.pre_segs)
  
-    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/cleaned_vectors.txt", "rb"))
+    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     vocab = get_vocabulary_freq_table(args.corpus, word_vectors)  
     segmented_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
     test = json.load(open("../data/morph_rules.json", "r"))
     
-    # os.system("python3 ../bpe.py --mode 3 -i " + args.corpus.name + " -ft " + \
-    # " -o " + os.path.join(args.output, "preseg") +  " -s " + str(max_merges))
+    os.system("python3 ../bpe.py --mode 3 -i " + args.corpus.name + " -ft " + \
+    " -o " + os.path.join(args.output, "preseg") +  " -s " + str(max_merges))
 
     os.system("python3 ../bpe.py --mode 1 -i " + args.corpus.name + " -ft " + \
     " -o " + os.path.join(args.output, "base") +  " -s " + str(max_merges))
