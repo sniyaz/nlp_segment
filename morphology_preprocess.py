@@ -1,7 +1,7 @@
 import json
 import pickle
 from collections import defaultdict
-from bpe import get_vocabulary, cosine_similarity 
+from bpe import get_vocabulary, get_vocabulary_freq_table, cosine_similarity 
 import networkx as nx 
 import sys
 import os
@@ -188,17 +188,25 @@ def test_transforms(word, morph_transforms, vocab, word_vectors):
 
 if __name__ == '__main__':
 
-    vocab = get_vocabulary(open("data/europarl/fi_san.txt", "r"))  
-        
-    test = json.load(open("data/morph_rules.json", "r"))
-    morph_transforms = process_json(test)    
-    
-    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
+    data_directory = sys.argv[1]
+    vectors_file = sys.argv[2]
 
-    #If prepping experiment
+    word_vectors = pickle.load(open(vectors_file, "rb"))
+    corpus_file = os.path.join(data_directory, "pure_corpus.txt")
+    vocab = get_vocabulary_freq_table(open(corpus_file, "r"), word_vectors)  
+        
+    json_contents = json.load(open("data/morph_rules.json", "r"))
+    morph_transforms = process_json(json_contents)    
+    
+
+    #If prepping short experiment
     gold_standard = {}
     eval_order = []
-    get_gs_data(open("/Users/Sherdil/Research/NLP/nlp_segment/data/seg_eval/gs_corpus_only.txt", "r"), gold_standard, eval_order) 
+    gs_file = os.path.join(data_directory, "gs_corpus_only.txt")
+    get_gs_data(open(gs_file, "r"), gold_standard, eval_order) 
+
+    pdb.set_trace()
+
     compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
 
     #compute_preseg(vocab, word_vectors, morph_transforms)
