@@ -101,7 +101,8 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
                 propogation_graph.add_edge(parent_word, word, link = [1])
             print(presegs[word])
             #Core of the propogation algorithm!
-            propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
+            if use_propogation:
+                propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
 
             if test_set:
                 target_words.append(parent_word)
@@ -190,6 +191,8 @@ if __name__ == '__main__':
 
     data_directory = sys.argv[1]
     vectors_file = sys.argv[2]
+    #Bit that sets whether or not to use propagation algo.
+    use_propogation = int(sys.argv[3])
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
     corpus_file = os.path.join(data_directory, "pure_corpus.txt")
