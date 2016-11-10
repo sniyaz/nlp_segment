@@ -106,7 +106,7 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
 
 
 #Needed if doing BPE with tie breaking. Big table of all pair frequencies
-def get_pair_statistics():
+def get_pair_statistics(vocab, segmentations):
     all_freqs = Counter()
     for word, freq in vocab.items():
         seg = segmentations[word]
@@ -173,7 +173,7 @@ def get_set_cohesion(word_set, word_vectors):
 
 #Updates the quick_pairs and segmentations data structures for a given word.
 def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, \
-    segmentations, freq_changes, update_caches):
+    segmentations, freq_changes, all_freqs, update_caches):
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 < len(segmentations[word]):
         quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
@@ -212,7 +212,7 @@ def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pa
         
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
-def merge_update(pair):
+def merge_update(pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold):
     #Helper for decting when the last occurance of a character in a word vanishes
     def remove_word_check(word, in_part):
         for part in segmentations[word]:
@@ -229,7 +229,7 @@ def merge_update(pair):
     while involved_words:
         word, first_index, second_index = involved_words.pop()
 
-        core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, True)
+        core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, all_freqs, True)
 
         #Remove the mapping of the word and old symbols from the quick_find structure
         if remove_word_check(word, pair[0]):
@@ -279,44 +279,32 @@ def draw_random_pairs():
 
 
 #Check the freq_cache and refresh if needed.
-def check_cache():
+def check_cache(freq_cache, threshold, all_freqs, iter_num):
     if len(freq_cache) == 0:
         most_frequent = max(all_freqs, key=all_freqs.get)
-        if i == 0:
-            refresh_freq_cache(all_freqs[most_frequent]/10)
-        else:
-            refresh_freq_cache(all_freqs[most_frequent] * i/(i+10000.0))    
+        new_threshold = all_freqs[most_frequent] * iter_num/(iter_num+10000.0)
+        refresh_freq_cache(freq_cache, new_threshold, all_freqs)
+        return new_threshold
+    else:
+        return threshold    
     
     
-def refresh_freq_cache(new_threshold):
-    global threshold
+def refresh_freq_cache(freq_cache, new_threshold, all_freqs):
     freq_cache.clear()
-    threshold = new_threshold
     for pair in all_freqs:
-        if all_freqs[pair] > threshold:
+        if all_freqs[pair] > new_threshold:
             freq_cache[pair] = all_freqs[pair]
 
 
 #Inspired by the BPE Paper code. Remember to cite if needed.
-def draw_frequent_pairs():
-    #Repopulate the cache in the event that it goes dry
-    check_cache()
-        
-    #print("SIZE CACHE:")
-    #print(len(freq_cache))
+def draw_frequent_pairs(freq_cache):
     frequent_pair = max(freq_cache, key=freq_cache.get)
     most_frequent_pairs = [p for p in freq_cache if freq_cache[p] == freq_cache[frequent_pair]]
     shuffle(most_frequent_pairs)
     return most_frequent_pairs
 
 
-
-if __name__ == '__main__':
-         
-    parser = create_parser()
-    args = parser.parse_args()
-
-    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
+def segment_vocab(vocab, num_iterations):
     segmentations = {}
     
     #Dict that maps characters to words containing them
@@ -324,30 +312,7 @@ if __name__ == '__main__':
     #Dict that maps pairs to words containing them
     quick_pairs = defaultdict(lambda: set())
     #Cache for speeing up max when finding frequent pairs
-    threshold = None
     freq_cache = Counter()
-    if args.ft:
-        vocab = get_vocabulary_freq_table(args.input, word_vectors)
-    else:
-        vocab = get_vocabulary(args.input)
-    
-    mode = int(args.mode)
-    #Vanilla
-    if mode == 1: 
-        use_bpe = True
-    #Tie Breaking
-    elif mode == 2:
-        use_bpe = False
-    #Morpology Pre-Segmentation
-    elif mode == 3:
-        use_bpe = True
-        with open("../debug_temp/presegs_ckpt.txt", "rb") as checkpoint_file:
-            presegs = pickle.load(checkpoint_file)
-        vocab = apply_presegs(vocab, presegs)
-        for word in list(vocab.keys()):
-            if vocab[word] == 0:
-                vocab.pop(word)
-            
 
     #Each words starts totally segmented..
     #Set up to the data structures
@@ -364,38 +329,67 @@ if __name__ == '__main__':
             if idx != len(seg) - 1:
                 quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
 
-    all_freqs = get_pair_statistics()
+    all_freqs = get_pair_statistics(vocab, segmentations)
+    #Set initial threshold and populate freq_cache
+    threshold = all_freqs[max(all_freqs, key=all_freqs.get)]/10
+    refresh_freq_cache(freq_cache, threshold, all_freqs)
     
-    print("SIZE QUICK FIND")
-    print(len(quick_find.keys()))
-
-    print("SIZE QUICK PAIRS")
-    print(len(quick_pairs.keys()))
-
-    print("SIZE VOCAB")
-    print(len(vocab.keys()))
-
     num_ties = 0
-    num_iterations = int(args.symbols)
     merges_done = []
 
     #Core algorithm
     for i in range(num_iterations):
         
-        drawn_pairs = draw_frequent_pairs()            
-        if use_bpe or len(drawn_pairs) == 1:
-            best_pair = drawn_pairs[0]
-        else:
-            if is_true_tie(drawn_pairs):
-                num_ties += 1
-            best_pair = max(drawn_pairs, key=lambda x: get_set_cohesion(quick_pairs[x], word_vectors))
-              
-    
+        #Has the max frequencey cache gone dry?
+        threshold = check_cache(freq_cache, threshold, all_freqs, i)
+
+        drawn_pairs = draw_frequent_pairs(freq_cache)            
+        best_pair = drawn_pairs[0]
+
         sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))                           
         
-        merge_update(best_pair)
+        merge_update(best_pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold)
         merges_done.append(best_pair)
 
+    return segmentations, merges_done
+
+
+
+if __name__ == '__main__':
+         
+    parser = create_parser()
+    args = parser.parse_args()
+
+    word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
+    
+    #Dict that maps characters to words containing them
+    quick_find = defaultdict(lambda: set())
+    #Dict that maps pairs to words containing them
+    quick_pairs = defaultdict(lambda: set())
+    #Cache for speeing up max when finding frequent pairs
+    threshold = None
+    freq_cache = Counter()
+    if args.ft:
+        vocab = get_vocabulary_freq_table(args.input, word_vectors)
+    else:
+        vocab = get_vocabulary(args.input)
+    
+    mode = int(args.mode)
+    #Vanilla
+    if mode == 1: 
+        pass
+    #Morpology Pre-Segmentation
+    elif mode == 2:
+        with open("../debug_temp/presegs_ckpt.txt", "rb") as checkpoint_file:
+            presegs = pickle.load(checkpoint_file)
+        vocab = apply_presegs(vocab, presegs)
+        for word in list(vocab.keys()):
+            if vocab[word] == 0:
+                vocab.pop(word)
+
+    num_iterations = int(args.symbols)
+    #Invoke Main BPE Algo
+    segmentations, merges_done = segment_vocab(vocab, num_iterations)
 
     #Write out the segmentations of each word in the corpus.
     segs_output_obj = open(args.output + "_segs.txt", "w+")
@@ -416,9 +410,6 @@ if __name__ == '__main__':
         merge_ops_output_obj.write(" ".join(pair))
         merge_ops_output_obj.write('\n')
     merge_ops_output_obj.close()
-
-    print("NUM TIES WAS:")
-    print(num_ties)
 
 
 

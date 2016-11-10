@@ -82,8 +82,8 @@ def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
 
             while involved_words:
                 word, first_index, second_index = involved_words.pop()
-                #Call this with throw away dicts for the frequencey cache. Not relevant here at all.
-                core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), False)
+                #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
+                core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), Counter(), False)
             
             quick_pairs.pop(pair)
 
