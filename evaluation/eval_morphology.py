@@ -11,10 +11,10 @@ import csv
 import matplotlib.pyplot as plt
 from collections import defaultdict, Counter
 
-from evaluate_seg import get_gs_data, call_evaluation, apply_merge_ops, extract_fmeasure
+from evaluate_seg import get_gs_data, call_evaluation, extract_fmeasure, get_merge_ops_list
 sys.path.append("../")
 from morphology_preprocess import compute_preseg, process_json
-from bpe import get_vocabulary_freq_table, apply_presegs, recover_preseg_boundary
+from bpe import get_vocabulary_freq_table, apply_presegs, recover_preseg_boundary, apply_merge_ops
 
 import pdb
 
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     os.system("mkdir " + morfessor_results)
     morfessor_fmeasure = eval_mofessor(args.morfessor_model, gold_standard_file, gold_standard_words, morfessor_results)
     
-    os.system("python3 ../bpe.py --mode 3 -i " + test_corpus_file + " -ft " + \
+    os.system("python3 ../bpe.py --mode 2 -i " + test_corpus_file + " -ft " + \
     " -o " + os.path.join(args.output, "preseg") +  " -s " + str(max_merges))
 
     os.system("python3 ../bpe.py --mode 1 -i " + test_corpus_file + " -ft " + \
@@ -111,11 +111,13 @@ if __name__ == '__main__':
         morph_eval_file = os.path.join(morph_folder, "eval_output.txt")
 
         base_merge_ops_obj = open(os.path.join(args.output, "base_merge_ops.txt"))
-        gs_bpe_segs = apply_merge_ops(gold_standard, base_merge_ops_obj, num_merges) 
+        base_merge_operations = get_merge_ops_list(base_merge_ops_obj)
+        gs_bpe_segs = apply_merge_ops(gold_standard, base_merge_operations, num_merges) 
         base_merge_ops_obj.close()
 
         preseg_merge_ops_obj = open(os.path.join(args.output, "preseg_merge_ops.txt"))
-        preseg_segs = apply_merge_ops(segmented_vocab, preseg_merge_ops_obj, num_merges) 
+        preseg_merge_operataions = get_merge_ops_list(preseg_merge_ops_obj)
+        preseg_segs = apply_merge_ops(segmented_vocab, preseg_merge_operataions, num_merges) 
         gs_mixed_segs = recover_preseg_boundary(gold_standard, presegs, preseg_segs)
         preseg_merge_ops_obj.close()
 

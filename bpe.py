@@ -304,6 +304,58 @@ def draw_frequent_pairs(freq_cache):
     return most_frequent_pairs
 
 
+#Take a list of trained merge operations a apply them to a new vocabulary!
+def apply_merge_ops(vocab, merge_operations, num_symbols=None):
+    segmentations = {}
+    quick_pairs = defaultdict(lambda: set())
+    
+    for word in vocab:
+        #Set up segmentations data structure
+        seg = list(word)
+        #seg.append("</w>")
+        segmentations[word] = seg
+        #Set up the quick_find data structure
+        for idx, c in enumerate(seg):
+            #Now set up the quick_pairs data structure
+            if idx != len(seg) - 1:
+                quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
+    
+    #Only do the first n merge operations...
+    if num_symbols:
+        merge_operations = merge_operations[:int(num_symbols)]
+    
+    for pair in merge_operations:
+        new_symbol = "".join(pair)
+        #Some of the pairs aren't relevant to the evaluations set...
+        if pair in quick_pairs:
+            involved_words = quick_pairs[pair]
+
+            while involved_words:
+                word, first_index, second_index = involved_words.pop()
+                #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
+                core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), Counter(), False)
+            quick_pairs.pop(pair)
+            
+    return segmentations
+
+
+#Take segmentations for a corpus and then split the corpus file itself
+def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
+    corpus_obj = open(corpus_path, "r")
+    output_obj = open(output_path, "r")
+    for line in args.input:
+        parsed_contents = []
+        for word in line.split():
+            word_seg = segmentations[word]
+            for part in word_seg[:-1]:
+                parsed_contents.append(part + separator)
+            parsed_contents.append(word_seg[-1])
+
+        parsed_line = " ".join(parsed_contents)
+        output_obj.write(parsed_line.strip())
+        output_obj.write('\n')
+
+
 def segment_vocab(vocab, num_iterations):
     segmentations = {}
     

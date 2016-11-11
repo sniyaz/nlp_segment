@@ -1,4 +1,4 @@
-#A script that scores segmentations bases on a gold standard.
+#A script that scores segmentations based on a gold standard.
 
 import sys
 import os
@@ -6,7 +6,7 @@ import codecs
 import argparse
 import string
 sys.path.append("../")
-from bpe import core_word_update
+from bpe import core_word_update, apply_merge_ops
 from collections import defaultdict, Counter
 
 import pdb
@@ -48,46 +48,15 @@ def get_gs_data(input_obj, gold_standard, eval_order):
         gold_standard[word] = word_segs
         eval_order.append(word)
 
-
-def apply_merge_ops(gold_standard, merge_ops_obj, num_symbols):
+def get_merge_ops_list(merge_ops_obj):
     merge_operations = []
     for line in merge_ops_obj:
         line = line.strip()
         line = str(line)
         pair = tuple(line.split(" "))
         merge_operations.append(pair)
-    
-    segmentations = {}
-    quick_pairs = defaultdict(lambda: set())
-    
-    for word in gold_standard:
-        #Set up segmentations data structure
-        seg = list(word)
-        #seg.append("</w>")
-        segmentations[word] = seg
-        #Set up the quick_find data structure
-        for idx, c in enumerate(seg):
-            #Now set up the quick_pairs data structure
-            if idx != len(seg) - 1:
-                quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
-    
-    #Only do the first n merge operations...
-    merge_operations = merge_operations[:int(num_symbols)]
-    
-    for pair in merge_operations:
-        new_symbol = "".join(pair)
-        #Some of the pairs aren't relevant to the evaluations set...
-        if pair in quick_pairs:
-            involved_words = quick_pairs[pair]
 
-            while involved_words:
-                word, first_index, second_index = involved_words.pop()
-                #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
-                core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), Counter(), False)
-            
-            quick_pairs.pop(pair)
-
-    return segmentations
+    return merge_operations
 
 
 def extract_fmeasure(result_filename):
@@ -136,7 +105,8 @@ if __name__ == '__main__':
     eval_order = []
     get_gs_data(args.input, gold_standard, eval_order)
     
-    segmentations = apply_merge_ops(gold_standard, args.merge_ops, args.symbols)
+    merge_operations = get_merge_ops_list(args.merge_ops)
+    segmentations = apply_merge_ops(gold_standard, merge_operations, args.symbols)
 
     call_evaluation(segmentations, eval_order, args.input.name)
 
