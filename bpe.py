@@ -86,6 +86,7 @@ def get_vocabulary_freq_table(fobj, word_vectors):
 
 
 def apply_presegs(vocab, presegs):
+    vocab = copy.deepcopy(vocab)   
     for word in presegs:
         if len(presegs[word]) > 1:
             freq = vocab[word]
@@ -342,7 +343,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None):
 #Take segmentations for a corpus and then split the corpus file itself
 def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     corpus_obj = open(corpus_path, "r")
-    output_obj = open(output_path, "r")
+    output_obj = open(output_path, "w+")
     for line in args.input:
         parsed_contents = []
         for word in line.split():
@@ -354,6 +355,9 @@ def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
         parsed_line = " ".join(parsed_contents)
         output_obj.write(parsed_line.strip())
         output_obj.write('\n')
+    
+    corpus_obj.close()
+    output_obj.close()
 
 
 def segment_vocab(vocab, num_iterations):

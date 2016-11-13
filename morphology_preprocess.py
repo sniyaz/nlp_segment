@@ -184,6 +184,8 @@ def test_transforms(word, morph_transforms, vocab, word_vectors):
                         return "s", suffix, new_string 
                     else:
                         return "p", prefix, new_string
+                #else:
+                #    print("SANITY")
         
    
 
@@ -193,24 +195,27 @@ if __name__ == '__main__':
     vectors_file = sys.argv[2]
     #Bit that sets whether or not to use propagation algo.
     use_propogation = int(sys.argv[3])
+    #Bit for if we are doing toy seg_eval experiment
+    seg_eval = int(sys.argv[4])
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
-    corpus_file = os.path.join(data_directory, "pure_corpus.txt")
-    vocab = get_vocabulary_freq_table(open(corpus_file, "r"), word_vectors)  
-        
     json_contents = json.load(open("data/morph_rules.json", "r"))
     morph_transforms = process_json(json_contents)    
-    
 
-    #If prepping short experiment
-    gold_standard = {}
-    eval_order = []
-    gs_file = os.path.join(data_directory, "gs_corpus_only.txt")
-    get_gs_data(open(gs_file, "r"), gold_standard, eval_order) 
+    if seg_eval:
+        corpus_file = os.path.join(data_directory, "pure_corpus.txt")
+        vocab = get_vocabulary_freq_table(open(corpus_file, "r"), word_vectors)  
+            
+        #If prepping short experiment
+        gold_standard = {}
+        eval_order = []
+        gs_file = os.path.join(data_directory, "gs_corpus_only.txt")
+        get_gs_data(open(gs_file, "r"), gold_standard, eval_order) 
 
-    pdb.set_trace()
+        compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
 
-    compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
-
-    #compute_preseg(vocab, word_vectors, morph_transforms)
+    else:
+        vocab = get_vocabulary(open(data_directory, "r"))
+        pdb.set_trace()
+        compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(vocab.keys()))
 

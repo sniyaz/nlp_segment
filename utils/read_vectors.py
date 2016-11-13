@@ -19,24 +19,29 @@ def create_parser():
         '--output', '-o', type=argparse.FileType('wb'), default=sys.stdout,
         metavar='PATH',
         help="Output file for the dictionary of word vectors (default: standard output)")
-
+    parser.add_argument(
+        '--dim', '-d', action="store",
+        metavar='PATH',
+        help="Vector Dimension")
+    
     return parser
 
 
 if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
+    dim = int(args.dim)
 
     word_vectors = {}
 
     for line in args.input:
         try:
             contents = [i for i in line.split()]
-            vector = contents[-300:]
+            vector = contents[-dim:]
             vector = [0.0 if i == "." else float(i) for i in vector]
             vector = np.asarray(vector)
 
-            contents = contents[:-300]
+            contents = contents[:-dim]
             word = "".join(contents)
             word_vectors[word] = vector
         except Exception as ec:
