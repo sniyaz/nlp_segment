@@ -87,10 +87,12 @@ def get_neighbor_ngrams(word, pair_index_1, pair_index_2, segmentations, n):
     return neighbor_ngrams, previous_ngrams
 
 
-def get_init_merge_data(vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, n):
-    #future_merge_data = = defaultdict(lambda: [defaultdict(lambda: Counter()), Counter()])
-    future_merge_data = Counter()
-    for pair in quick_pairs:
+#Return delta information for the pairs in the given pairs_list.
+def get_pair_deltas(pairs_list, vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, n):
+    merge_deltas = Counter()
+    merge_changed_bases = {}
+    merge_changed_conditionals = {}
+    for pair in pairs_list:
         involved_words = quick_pairs[pair]
         changed_bases = Counter()
         changed_conditionals = defaultdict(lambda: Counter())
@@ -109,40 +111,174 @@ def get_init_merge_data(vocab, quick_pairs, segmentations, base_freqs, condition
                 changed_conditionals[cur_base][cur_conditioned] += vocab[word]
                 
         #Calculate the change in log probability if pair merged.
-        delta = 0
-        for delta_base in changed_bases:
-            if changed_bases[delta_base] == 0:
-                continue
-            new_base_count = base_freqs[delta_base] + changed_bases[delta_base]
-            for prev_conditioned in conditional_freqs[delta_base]:
-                conditional_count = conditional_freqs[delta_base][prev_conditioned]
-                #Undo the old probability contribution
-                delta -= conditional_count*log(conditional_count/base_freqs[delta_base])
+        delta = calculate_delta(changed_bases, changed_conditionals, base_freqs, conditional_freqs)     
+        merge_deltas[pair] = delta
+        merge_changed_bases[pair] = changed_bases
+        merge_changed_conditionals[pair] = changed_conditionals
+
+    return merge_deltas, merge_changed_bases, merge_changed_conditionals
+
+
+def calculate_delta(changed_bases, changed_conditionals, base_freqs, conditional_freqs):
+    #Calculate the change in log probability if pair merged.
+    delta = 0
+    for delta_base in changed_bases:
+        if changed_bases[delta_base] == 0:
+            continue
+        new_base_count = base_freqs[delta_base] + changed_bases[delta_base]
+        for prev_conditioned in conditional_freqs[delta_base]:
+            conditional_count = conditional_freqs[delta_base][prev_conditioned]
+            if conditional_count > 0:
+                if base_freqs[delta_base] > 0:
+                    delta -= conditional_count*log(conditional_count/base_freqs[delta_base])
                 #And add the new one....
                 if new_base_count > 0:
                     delta += conditional_count*log(conditional_count/new_base_count)
 
-        for delta_base in changed_conditionals:
-            new_base_count = base_freqs[delta_base] + changed_bases[delta_base]
-            if new_base_count > 0:
-                cur_cond_dict = changed_conditionals[delta_base]
-                for delta_conditioned in cur_cond_dict:
-                    count_change = cur_cond_dict[delta_conditioned]
-                    if count_change == 0:
-                        continue
-                    old_conditional_count = conditional_freqs[delta_base][delta_conditioned]
-                    new_conditional_count = old_conditional_count + count_change
-                    #Take away the old conditional probabilities...
-                    if old_conditional_count > 0:
-                        delta -= old_conditional_count*log(old_conditional_count/new_base_count)
-                     
-                    #And add the new ones!
-                    if new_conditional_count > 0:
-                        delta += new_conditional_count*log(new_conditional_count/new_base_count)
-            
-        future_merge_data[pair] = delta
+    for delta_base in changed_conditionals:
+        new_base_count = base_freqs[delta_base] + changed_bases[delta_base]
+        if new_base_count > 0:
+            cur_cond_dict = changed_conditionals[delta_base]
+            for delta_conditioned in cur_cond_dict:
+                count_change = cur_cond_dict[delta_conditioned]
+                if count_change == 0:
+                    continue
+                old_conditional_count = conditional_freqs[delta_base][delta_conditioned]
+                new_conditional_count = old_conditional_count + count_change
+                #Take away the old conditional probabilities...
+                if old_conditional_count > 0:
+                    delta -= old_conditional_count*log(old_conditional_count/new_base_count) 
+                #And add the new ones!
+                if new_conditional_count > 0:
+                    delta += new_conditional_count*log(new_conditional_count/new_base_count)
+    return delta
 
-    return future_merge_data
+
+#Modified from bpe.py to account for None characters.
+def core_word_update(word, pair, first_index, second_index, quick_pairs, segmentations, n):
+    new_symbol = "".join(pair)
+    #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
+    if second_index + 1 <= len(segmentations[word]) - n - 1:
+        quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+       
+    if first_index - 1 >= n: 
+        quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+        
+    #Update segmentations data structure 
+    segmentations[word][first_index] = new_symbol
+    segmentations[word].pop(second_index)
+
+    #Update the pairs data structure with new pairs formed with new symbol 
+    if second_index <= len(segmentations[word]) - n - 1:
+        quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+        
+    if first_index - 1 >= n:
+        quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+    
+    #Now, move the indicies for things after the merged pair!
+    for i in range(second_index, len(segmentations[word]) - n - 1):
+        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+        
+
+def apply_merge(pair, vocab, quick_pairs, segmentations, merge_deltas, merge_changed_bases, merge_changed_conditionals, base_freqs, conditional_freqs, n):
+
+    new_changed_bases = merge_changed_bases[pair]
+    new_changed_conditionals = merge_changed_conditionals[pair]
+
+    old_base_freqs = copy.deepcopy(base_freqs)
+    old_conditional_freqs = copy.deepcopy(conditional_freqs)
+
+    #Which pairs need to be recalculated later?
+    invalidated_pairs = get_invalidated_pairs(pair, quick_pairs,segmentations, n)
+    
+    #Update our frequency data_structures
+    for delta_base in new_changed_bases:
+        base_freqs[delta_base] += new_changed_bases[delta_base]
+        #Prune bases that don't exist anymore.
+        if base_freqs[delta_base] == 0:
+            base_freqs.pop(delta_base)
+            conditional_freqs.pop(delta_base)
+        
+    for delta_base in new_changed_conditionals:
+        cur_cond_dict = new_changed_conditionals[delta_base]
+        for delta_conditioned in cur_cond_dict:
+            conditional_freqs[delta_base][delta_conditioned] += cur_cond_dict[delta_conditioned]
+    
+    #Update segmentation data_structures
+    involved_words = quick_pairs[pair]
+    while involved_words:
+        word, first_index, second_index = involved_words.pop()
+        core_word_update(word, pair, first_index, second_index, quick_pairs, segmentations, n)
+
+    #Done with this pair: remove from data_structures.
+    invalidated_pairs.remove(pair)
+    quick_pairs.pop(pair)
+    merge_deltas.pop(pair)
+    merge_changed_bases.pop(pair)
+    merge_changed_conditionals.pop(pair)
+    
+    #RESET the old contribution to the delta.
+    for pair in merge_deltas:
+        pair_base_changes = merge_changed_bases[pair]
+        pair_conditional_changes = merge_changed_conditionals[pair]
+
+        for delta_base in new_changed_bases:
+            if delta_base in pair_base_changes:
+                expected_change = pair_base_changes[delta_base]
+                expected_base_count = old_base_freqs[delta_base] + expected_change
+                for prev_conditioned in old_conditional_freqs[delta_base]:
+                    conditional_count = old_conditional_freqs[delta_base][prev_conditioned]
+                    if conditional_count > 0:
+                        merge_deltas[pair] += conditional_count*log(conditional_count/old_base_freqs[delta_base])
+                        if expected_base_count > 0:
+                            merge_deltas[pair] -= conditional_count*log(conditional_count/expected_base_count)
+            
+        for delta_base in new_changed_conditionals:
+            cur_cond_dict = new_changed_conditionals[delta_base]
+            expected_base_count = old_base_freqs[delta_base] + pair_base_changes[delta_base]
+            if expected_base_count > 0:
+                for delta_conditioned in cur_cond_dict:
+                    if delta_conditioned in pair_conditional_changes[delta_base]:     
+                        count_change = pair_conditional_changes[delta_base][delta_conditioned]
+                        if count_change == 0:
+                            continue
+                        old_conditional_count = old_conditional_freqs[delta_base][delta_conditioned]
+                        expected_conditional_count = old_conditional_count + count_change
+                        if old_conditional_count > 0:
+                            merge_deltas[pair] += old_conditional_count*log(old_conditional_count/expected_base_count)
+                        if expected_conditional_count > 0:
+                            merge_deltas[pair] -= expected_conditional_count*log(expected_conditional_count/expected_base_count)
+
+    #Finally, REDO the delta calculations for the pairs that had their entries invalidated.
+    updated_deltas, updated_changed_bases, updated_changed_conditionals = get_pair_deltas(invalidated_pairs, vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, n)
+    for pair in updated_deltas:
+        merge_deltas[pair] = updated_deltas[pair]
+        merge_changed_bases[pair] = updated_changed_bases[pair]
+        merge_changed_conditionals[pair] = updated_changed_conditionals[pair]
+
+
+def get_invalidated_pairs(pair, quick_pairs, segmentations, n):
+    invalidated_pairs = set()
+    involved_words = quick_pairs[pair]
+    for word, first_index, second_index in involved_words:
+        word_seg = segmentations[word]
+        #Get the newly created pairs that also need delta values.
+        if first_index - 1 >= n:
+            invalidated_pairs.add((word_seg[first_index - 1], "".join(pair)))
+        if second_index + 1 <= len(word_seg) - 1 - n:
+            invalidated_pairs.add(("".join(pair), word_seg[second_index + 1]))
+        #Also, all the old pairs that were disrupted.
+        back_index = max(first_index - n, n)
+        front_index = back_index + 1
+        cut_off = min(len(word_seg) - 1 - n, second_index + n)
+        while front_index <= cut_off:
+            cur_pair = (word_seg[back_index], word_seg[front_index])
+            invalidated_pairs.add(cur_pair)
+            back_index += 1
+            front_index += 1
+
+    return invalidated_pairs
 
 
 def get_segmentation_data(vocab, n):
@@ -166,6 +302,7 @@ def get_segmentation_data(vocab, n):
 
 
 
+
 if __name__ == '__main__':
 
     target_file = sys.argv[1]
@@ -179,10 +316,16 @@ if __name__ == '__main__':
     segmentations, quick_pairs = get_segmentation_data(vocab, num_before)
     base_freqs, conditional_freqs = get_ngram_statistics(vocab, segmentations, num_before)
 
-    #Calculate the initial list of probability deltas for merges.
-    future_merge_data = get_init_merge_data(vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, num_before)
+    #Calculate the initial set of deltas for merges.
+    merge_deltas, merge_changed_bases, merge_changed_conditionals = get_pair_deltas(quick_pairs, vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, num_before)
     
-    pdb.set_trace()
+    for i in range(num_iterations):
+        print("pre-max")
+        best_pair = max(merge_deltas, key=lambda x: merge_deltas[x])
+        print("post-max")
+        sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (log_prob_delta {3})\n'.format(i, best_pair[0], best_pair[1], merge_deltas[best_pair]))
+        apply_merge(best_pair, vocab, quick_pairs, segmentations, merge_deltas, merge_changed_bases, merge_changed_conditionals, base_freqs, conditional_freqs, num_before)
+        
 
 
 
