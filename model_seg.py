@@ -24,6 +24,18 @@ from bpe import get_vocabulary
 
 import pdb
 
+#Get all frequency data.
+def get_pair_statistics(vocab, segmentations, n):
+    all_freqs = Counter()
+    for word, freq in vocab.items():
+        seg = segmentations[word]
+        prev_char = seg[n]
+        for char in seg[n+1:len(seg) - n]:
+            all_freqs[(prev_char, char)] += freq
+            prev_char = char
+
+    return all_freqs
+
 
 #Big table of all n-gram frequencies
 def get_ngram_statistics(vocab, segmentations, n):
@@ -152,14 +164,18 @@ def calculate_delta(changed_bases, changed_conditionals, base_freqs, conditional
 
 
 #Modified from bpe.py to account for None characters.
-def core_word_update(word, pair, first_index, second_index, quick_pairs, segmentations, n):
+def core_word_update(word, pair, first_index, second_index, quick_pairs, segmentations, n, freq_changes, all_freqs):
     new_symbol = "".join(pair)
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 <= len(segmentations[word]) - n - 1:
         quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+        all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
+        freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
        
     if first_index - 1 >= n: 
         quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+        all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
+        freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
         
     #Update segmentations data structure 
     segmentations[word][first_index] = new_symbol
@@ -168,9 +184,13 @@ def core_word_update(word, pair, first_index, second_index, quick_pairs, segment
     #Update the pairs data structure with new pairs formed with new symbol 
     if second_index <= len(segmentations[word]) - n - 1:
         quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+        all_freqs[(new_symbol, segmentations[word][second_index])] += vocab[word]
+        freq_changes[(new_symbol, segmentations[word][second_index])] += vocab[word]
         
     if first_index - 1 >= n:
         quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+        all_freqs[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
+        freq_changes[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
     
     #Now, move the indicies for things after the merged pair!
     for i in range(second_index, len(segmentations[word]) - n - 1):
@@ -178,7 +198,7 @@ def core_word_update(word, pair, first_index, second_index, quick_pairs, segment
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
         
 
-def apply_merge(pair, vocab, quick_pairs, segmentations, merge_deltas, merge_changed_bases, merge_changed_conditionals, base_freqs, conditional_freqs, n):
+def apply_merge(pair, vocab, quick_pairs, segmentations, freq_cache, all_freqs, merge_deltas, merge_changed_bases, merge_changed_conditionals, base_freqs, conditional_freqs, n):
 
     new_changed_bases = merge_changed_bases[pair]
     new_changed_conditionals = merge_changed_conditionals[pair]
@@ -192,32 +212,50 @@ def apply_merge(pair, vocab, quick_pairs, segmentations, merge_deltas, merge_cha
     #Update our frequency data_structures
     for delta_base in new_changed_bases:
         base_freqs[delta_base] += new_changed_bases[delta_base]
-        #Prune bases that don't exist anymore.
-        if base_freqs[delta_base] == 0:
-            base_freqs.pop(delta_base)
-            conditional_freqs.pop(delta_base)
         
     for delta_base in new_changed_conditionals:
         cur_cond_dict = new_changed_conditionals[delta_base]
         for delta_conditioned in cur_cond_dict:
             conditional_freqs[delta_base][delta_conditioned] += cur_cond_dict[delta_conditioned]
     
+    lowest_freq = min(freq_cache, key = lambda x: freq_cache[x])  
+    threshold = freq_cache[lowest_freq] 
     #Update segmentation data_structures
+    freq_changes = Counter()
     involved_words = quick_pairs[pair]
     while involved_words:
         word, first_index, second_index = involved_words.pop()
-        core_word_update(word, pair, first_index, second_index, quick_pairs, segmentations, n)
-
+        core_word_update(word, pair, first_index, second_index, quick_pairs, segmentations, n, freq_changes, all_freqs)
+    
+    #Now we have to clean up the frequencey cache...
+    for changed_pair in freq_changes:
+        if freq_changes[changed_pair] > threshold:
+            freq_cache[changed_pair] = freq_changes[changed_pair]
+            updated_deltas, updated_changed_bases, updated_changed_conditionals = get_pair_deltas([changed_pair], vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, n)
+            merge_deltas[changed_pair] = updated_deltas[changed_pair]
+            merge_changed_bases[changed_pair] = updated_changed_bases[changed_pair]
+            merge_changed_conditionals[changed_pair] = updated_changed_conditionals[changed_pair]
+            invalidated_pairs.remove(changed_pair)
+        else:
+            if changed_pair in freq_cache:
+                freq_cache.pop(changed_pair)
+                merge_deltas.pop(changed_pair)
+                merge_changed_bases.pop(changed_pair)
+                merge_changed_conditionals.pop(changed_pair)
+    
     #Done with this pair: remove from data_structures.
     invalidated_pairs.remove(pair)
     quick_pairs.pop(pair)
-    merge_deltas.pop(pair)
-    merge_changed_bases.pop(pair)
-    merge_changed_conditionals.pop(pair)
+    all_freqs.pop(pair)
+    #Sometimes this can be an issue when the pair already got popped above.
+    if pair in freq_cache:
+        freq_cache.pop(pair)
+        merge_deltas.pop(pair)
+        merge_changed_bases.pop(pair)
+        merge_changed_conditionals.pop(pair)
     
-    print("START")
     #RESET the old contribution to the delta.
-    for pair in merge_deltas:
+    for pair in freq_cache:
         pair_base_changes = merge_changed_bases[pair]
         pair_conditional_changes = merge_changed_conditionals[pair]
 
@@ -246,12 +284,11 @@ def apply_merge(pair, vocab, quick_pairs, segmentations, merge_deltas, merge_cha
                             merge_deltas[pair] += old_conditional_count*log(old_conditional_count/expected_base_count)
                         if expected_conditional_count > 0:
                             merge_deltas[pair] -= expected_conditional_count*log(expected_conditional_count/expected_base_count)
-    print("END")
 
-    pdb.set_trace()
-
+    invalidated_pairs = set([p for p in freq_cache if p in invalidated_pairs])
     #Finally, REDO the delta calculations for the pairs that had their entries invalidated.
     updated_deltas, updated_changed_bases, updated_changed_conditionals = get_pair_deltas(invalidated_pairs, vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, n)
+    print(len(invalidated_pairs))
     for pair in updated_deltas:
         merge_deltas[pair] = updated_deltas[pair]
         merge_changed_bases[pair] = updated_changed_bases[pair]
@@ -301,7 +338,20 @@ def get_segmentation_data(vocab, n):
     return segmentations, quick_pairs
 
 
+#Fill the cache back up, and return what we added.
+def refill_cache(freq_cache, all_freqs, cache_min, cache_max):
+    added = []
+    if len(freq_cache) < cache_min:
+        sorted_on_freq = sorted(all_freqs.keys(), key = lambda x: all_freqs[x], reverse=True)
+        for i in range(0, cache_max):
+            cur_pair = sorted_on_freq[i]
+            if cur_pair not in freq_cache:
+                freq_cache[cur_pair] = all_freqs[cur_pair]
+                added.append(cur_pair)
 
+    return added
+    
+   
 
 if __name__ == '__main__':
 
@@ -313,16 +363,32 @@ if __name__ == '__main__':
     target_object = open(target_file, "r")
     vocab = get_vocabulary(target_object)
 
+    cache_min = 20
+    cache_max = 40
+
     segmentations, quick_pairs = get_segmentation_data(vocab, num_before)
     base_freqs, conditional_freqs = get_ngram_statistics(vocab, segmentations, num_before)
-
-    #Calculate the initial set of deltas for merges.
-    merge_deltas, merge_changed_bases, merge_changed_conditionals = get_pair_deltas(quick_pairs, vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, num_before)
+    all_freqs = get_pair_statistics(vocab, segmentations, num_before)
     
+    freq_cache = Counter()
+    merge_deltas = Counter()
+    merge_changed_bases = {}
+    merge_changed_conditionals = {}
+
     for i in range(num_iterations):
+        #Refill the freqeuncey cache in case it gets too empty!
+        added = refill_cache(freq_cache, all_freqs, cache_min, cache_max)
+        updated_deltas, updated_changed_bases, updated_changed_conditionals = get_pair_deltas(added, vocab, quick_pairs, segmentations, base_freqs, conditional_freqs, num_before)
+        for added_pair in added:
+            merge_deltas[added_pair] = updated_deltas[added_pair]
+            merge_changed_bases[added_pair] = updated_changed_bases[added_pair]
+            merge_changed_conditionals[added_pair] = updated_changed_conditionals[added_pair]
+        
         best_pair = max(merge_deltas, key=lambda x: merge_deltas[x])
         sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (log_prob_delta {3})\n'.format(i, best_pair[0], best_pair[1], merge_deltas[best_pair]))
-        apply_merge(best_pair, vocab, quick_pairs, segmentations, merge_deltas, merge_changed_bases, merge_changed_conditionals, base_freqs, conditional_freqs, num_before)
+        apply_merge(best_pair, vocab, quick_pairs, segmentations, freq_cache, all_freqs, merge_deltas, merge_changed_bases, merge_changed_conditionals, base_freqs, conditional_freqs, num_before)
+        
+
         
 
 
