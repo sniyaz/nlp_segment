@@ -193,13 +193,14 @@ if __name__ == '__main__':
 
     data_directory = sys.argv[1]
     vectors_file = sys.argv[2]
+    transforms_file = sys.argv[3] 
     #Bit that sets whether or not to use propagation algo.
-    use_propogation = int(sys.argv[3])
+    use_propogation = int(sys.argv[4])
     #Bit for if we are doing toy seg_eval experiment
-    seg_eval = int(sys.argv[4])
+    seg_eval = int(sys.argv[5])
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
-    json_contents = json.load(open("data/morph_rules.json", "r"))
+    json_contents = json.load(open(transforms_file, "r"))
     morph_transforms = process_json(json_contents)    
 
     if seg_eval:
