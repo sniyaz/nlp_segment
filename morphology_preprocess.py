@@ -7,19 +7,21 @@ import sys
 import os
 
 sys.path.append("./evaluation/")
-from evaluate_seg import get_gs_data
 
 import pdb
 
-def process_json(json_data):
+def process_json(json_contents, vocab, word_vectors, num_examples=2):
     morph_transforms = defaultdict( lambda: defaultdict(lambda: []) )
     
-    for change in json_data:
+    #OPTIMIZATION: Keep track of longest drop strings, so we can limit search in test_transforms.
+    max_suffix_drop = 0
+    max_prefix_drop = 0
+
+    for change in json_contents:
         #Don't care about empty rules like this...
         if "transformations" not in change:
             continue
 
-        change_data = {}
         from_str = change["rule"]["from"]
         to_str = change["rule"]["to"]
         rule_kind = change["rule"]["kind"]
@@ -31,25 +33,42 @@ def process_json(json_data):
         rule_inverted = len(from_str) < len(to_str)
         if rule_inverted:
             from_str, to_str = to_str, from_str
+
         from_str, to_str = get_drop_string(from_str, to_str, rule_kind)
+        #Book-keeping for our optimization.
+        if rule_kind == "s":
+            max_suffix_drop = max(max_suffix_drop, len(from_str))
+        else:
+            max_prefix_drop = max(max_prefix_drop, len(from_str))
+
 
         transformations = sorted(change["transformations"], key=lambda x: float(x["cosine"]), reverse=True)
-        if rule_inverted:
-            direction_words = set([(trans["direction"]["output"], trans["direction"]["input"]) for trans in transformations])
-        else:
-            direction_words = set([(trans["direction"]["input"], trans["direction"]["output"]) for trans in transformations])
-        
-        direction_words = list(direction_words)
-        direction_words = [(to_str,) + tup for tup in direction_words]
+        new_transforms = []
+        for trans in transformations:
+            #OPTIMIZATION: Only keep around a small number of word vectors for each optimzation.
+            if len(new_transforms) == num_examples:
+                break
 
-        morph_transforms[from_str][rule_kind].extend(direction_words)
+            if rule_inverted:
+                longer_word = trans["direction"]["output"]
+                shorter_word = trans["direction"]["input"]
+            else:
+                longer_word = trans["direction"]["input"]
+                shorter_word = trans["direction"]["output"]
+
+            if longer_word in vocab and shorter_word in vocab:
+                #TODO: This right?
+                direction_vector = word_vectors[shorter_word] - word_vectors[longer_word]
+                new_transforms.append((to_str, direction_vector))
+            
+        morph_transforms[from_str][rule_kind].extend(new_transforms)
     
     #Heuristic: Try transforms that lead to shorter words first.
     for drop_string in morph_transforms:
         morph_transforms[drop_string]["s"] = sorted(morph_transforms[drop_string]["s"], key=lambda x: len(x[0]))
         morph_transforms[drop_string]["p"] = sorted(morph_transforms[drop_string]["p"], key=lambda x: len(x[0]))
 
-    return morph_transforms
+    return max_suffix_drop, max_prefix_drop, morph_transforms
 
 
 def get_drop_string(from_str, to_str, rule_kind):
@@ -72,6 +91,7 @@ def get_drop_string(from_str, to_str, rule_kind):
     
 
 def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
+
     propogation_graph = nx.DiGraph()  
     vocab = list(vocabulary.keys())
     #Go from longer words to shorter ones since we apply "drop" rules
@@ -84,8 +104,9 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
         target_words = sorted(test_set, key = lambda x: len(x), reverse=True)
 
     i = 0
+    words_to_do = len(target_words)
     while target_words:
-        #rint(i)
+        #print("Porcessing " + str(i) + "/" + str(words_to_do))
         #Don't change something while you iterate over it!
         word = target_words[0]
         target_words = target_words[1:]
@@ -100,14 +121,14 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
                 presegs[word] = [drop_str, word[len(drop_str):]]
                 propogation_graph.add_edge(parent_word, word, link = [1])
             print(presegs[word])
-            #Core of the propogation algorithm!
-            if use_propogation:
-                propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
 
-            if test_set:
-                target_words.append(parent_word)
-          
-        
+            # #Core of the propogation algorithm!
+            # if use_propogation:
+            #     propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
+
+            # if test_set:
+            #     target_words.append(parent_word)
+              
         i += 1 
        
     #DEBUG
@@ -152,42 +173,35 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
         pdb.set_trace()
 
 
-
+def check_transform_similarity(word, new_string, direction_vector, vocab, word_vectors, threshold=0.3):
+    if new_string in vocab:
+        new_vector = word_vectors[word] + direction_vector
+        if cosine_similarity(new_vector, word_vectors[new_string]) > threshold:
+            print(word + " ---> " + new_string)
+            return True
+    return False
+        
 
 def test_transforms(word, morph_transforms, vocab, word_vectors):
-    threshold = 0.3
-    
-    for i in range(1, len(word)):
-        suffix = word[-i:]
-        prefix = word[:i]
 
-        for kind, direction_words in zip(["s", "p"], [morph_transforms[suffix]["s"], morph_transforms[prefix]["p"]]):
-            for transform in direction_words:                
+    for i in range(1, max(max_suffix_drop, max_prefix_drop)):
+        if i <= max_suffix_drop:
+            suffix = word[-i:]
+            for transform in morph_transforms[suffix]["s"]:
                 to_str = transform[0]
+                new_string = word[:-i] + to_str
+                if check_transform_similarity(word, new_string, transform[1], vocab, word_vectors):
+                    return "s", suffix, new_string 
 
-                if kind == "s":
-                    new_string = word[:-i] + to_str
-                else:
-                    new_string = to_str + word[i:]
-                trans_from = transform[1]
-                trans_to = transform[2]
+        elif i <= max_prefix_drop:
+            prefix = word[:i]
+            for transform in morph_transforms[prefix]["p"]:
+                to_str = transform[0]
+                new_string = to_str + word[i:]
+                if check_transform_similarity(word, new_string, transform[1], vocab, word_vectors):    
+                    return "p", prefix, new_string
 
-                if new_string not in vocab or trans_from not in vocab or trans_to not in vocab:
-                    continue
 
-                direction_vector = word_vectors[trans_to] - word_vectors[trans_from]
-                new_vector = word_vectors[word] + direction_vector
-                #print(cosine_similarity(word_vectors[new_string], new_vector))
-                if cosine_similarity(word_vectors[new_string], new_vector) > threshold:
-                    print(word + " ---> " + new_string)
-                    if kind == "s":
-                        return "s", suffix, new_string 
-                    else:
-                        return "p", prefix, new_string
-                #else:
-                #    print("SANITY")
-        
-   
 
 if __name__ == '__main__':
 
@@ -201,22 +215,14 @@ if __name__ == '__main__':
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
     json_contents = json.load(open(transforms_file, "r"))
-    morph_transforms = process_json(json_contents)    
 
     if seg_eval:
+        #If prepping short "toy" experiment
         corpus_file = os.path.join(data_directory, "pure_corpus.txt")
         vocab = get_vocabulary_freq_table(open(corpus_file, "r"), word_vectors)  
-            
-        #If prepping short experiment
-        gold_standard = {}
-        eval_order = []
-        gs_file = os.path.join(data_directory, "gs_corpus_only.txt")
-        get_gs_data(open(gs_file, "r"), gold_standard, eval_order) 
-
-        compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(gold_standard.keys()))
 
     else:
         vocab = get_vocabulary(open(data_directory, "r"))
-        pdb.set_trace()
-        compute_preseg(vocab, word_vectors, morph_transforms, test_set=list(vocab.keys()))
-
+        
+    max_suffix_drop, max_prefix_drop, morph_transforms = process_json(json_contents, vocab, word_vectors)   
+    compute_preseg(vocab, word_vectors, morph_transforms)
