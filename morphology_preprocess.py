@@ -7,6 +7,7 @@ import sys
 import os
 
 sys.path.append("./evaluation/")
+from evaluate_seg import get_gs_data
 
 import pdb
 
@@ -50,14 +51,13 @@ def process_json(json_contents, vocab, word_vectors, num_examples=2):
                 break
 
             if rule_inverted:
-                longer_word = trans["direction"]["output"]
-                shorter_word = trans["direction"]["input"]
+                longer_word = trans["rule"]["output"]
+                shorter_word = trans["rule"]["input"]
             else:
-                longer_word = trans["direction"]["input"]
-                shorter_word = trans["direction"]["output"]
+                longer_word = trans["rule"]["input"]
+                shorter_word = trans["rule"]["output"]
 
             if longer_word in vocab and shorter_word in vocab:
-                #TODO: This right?
                 direction_vector = word_vectors[shorter_word] - word_vectors[longer_word]
                 new_transforms.append((to_str, direction_vector))
             
@@ -106,7 +106,8 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
     i = 0
     words_to_do = len(target_words)
     while target_words:
-        #print("Porcessing " + str(i) + "/" + str(words_to_do))
+        if (i % 100 == 0):
+            print("Processing " + str(i) + "/" + str(words_to_do))
         #Don't change something while you iterate over it!
         word = target_words[0]
         target_words = target_words[1:]
@@ -183,8 +184,9 @@ def check_transform_similarity(word, new_string, direction_vector, vocab, word_v
         
 
 def test_transforms(word, morph_transforms, vocab, word_vectors):
-
-    for i in range(1, max(max_suffix_drop, max_prefix_drop)):
+    max_scan = max(max_suffix_drop, max_prefix_drop)
+    max_scan = min(max_scan, len(word))
+    for i in range(1, max_scan):
         if i <= max_suffix_drop:
             suffix = word[-i:]
             for transform in morph_transforms[suffix]["s"]:
@@ -220,9 +222,18 @@ if __name__ == '__main__':
         #If prepping short "toy" experiment
         corpus_file = os.path.join(data_directory, "pure_corpus.txt")
         vocab = get_vocabulary_freq_table(open(corpus_file, "r"), word_vectors)  
+        
+        #If prepping short experiment
+        gold_standard = {}
+        eval_order = []
+        gs_file = os.path.join(data_directory, "gs_corpus_only.txt")
+        get_gs_data(open(gs_file, "r"), gold_standard, eval_order) 
+
+        test_set = list(gold_standard.keys())
 
     else:
         vocab = get_vocabulary(open(data_directory, "r"))
+        test_set = list(vocab.keys())
         
     max_suffix_drop, max_prefix_drop, morph_transforms = process_json(json_contents, vocab, word_vectors)   
-    compute_preseg(vocab, word_vectors, morph_transforms)
+    compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set)

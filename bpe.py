@@ -322,7 +322,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None):
                 quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
     
     #Only do the first n merge operations...
-    if num_symbols:
+    if num_symbols != None:
         merge_operations = merge_operations[:int(num_symbols)]
     
     for pair in merge_operations:

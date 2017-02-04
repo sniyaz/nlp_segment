@@ -81,7 +81,6 @@ if __name__ == '__main__':
     word_vectors = pickle.load(open("/Users/Sherdil/Research/NLP/nlp_segment/data/vectors.txt", "rb"))
     vocab = get_vocabulary_freq_table(open(test_corpus_file, "r"), word_vectors)  
     segmented_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
-    test = json.load(open("../data/morph_rules.json", "r"))
 
     #Run morfessor as a baseline to compare against.
     morfessor_results = os.path.join(args.output, "morfessor_results")
