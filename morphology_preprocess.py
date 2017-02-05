@@ -10,6 +10,7 @@ sys.path.append("./evaluation/")
 from evaluate_seg import get_gs_data
 
 import pdb
+import time
 
 def process_json(json_contents, vocab, word_vectors, num_examples=2):
     morph_transforms = defaultdict( lambda: defaultdict(lambda: []) )
@@ -105,9 +106,17 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
 
     i = 0
     words_to_do = len(target_words)
+    start = time.time()
     while target_words:
-        if (i % 100 == 0):
+        # if (i % 100 == 0):
+        #     print("Processing " + str(i) + "/" + str(words_to_do))
+        if (i % 500 == 0):
+            print("")
             print("Processing " + str(i) + "/" + str(words_to_do))
+            time_elapsed = time.time() - start
+            print("Time passed: " + str(time_elapsed))
+            print("")
+            
         #Don't change something while you iterate over it!
         word = target_words[0]
         target_words = target_words[1:]
@@ -186,7 +195,7 @@ def check_transform_similarity(word, new_string, direction_vector, vocab, word_v
 def test_transforms(word, morph_transforms, vocab, word_vectors):
     max_scan = max(max_suffix_drop, max_prefix_drop)
     max_scan = min(max_scan, len(word))
-    for i in range(1, max_scan):
+    for i in range(1, max_scan + 1):
         if i <= max_suffix_drop:
             suffix = word[-i:]
             for transform in morph_transforms[suffix]["s"]:
