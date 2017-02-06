@@ -13,11 +13,8 @@ import pdb
 import time
 
 def process_json(json_contents, vocab, word_vectors, num_examples=2):
-    morph_transforms = defaultdict( lambda: defaultdict(lambda: []) )
-    
-    #OPTIMIZATION: Keep track of longest drop strings, so we can limit search in test_transforms.
-    max_suffix_drop = 0
-    max_prefix_drop = 0
+    #Satanic code that makes a three-layer dictionary.
+    transforms_dict = defaultdict( lambda: defaultdict( lambda: defaultdict(lambda: []) ) )
 
     for change in json_contents:
         #Don't care about empty rules like this...
@@ -37,18 +34,12 @@ def process_json(json_contents, vocab, word_vectors, num_examples=2):
             from_str, to_str = to_str, from_str
 
         from_str, to_str = get_drop_string(from_str, to_str, rule_kind)
-        #Book-keeping for our optimization.
-        if rule_kind == "s":
-            max_suffix_drop = max(max_suffix_drop, len(from_str))
-        else:
-            max_prefix_drop = max(max_prefix_drop, len(from_str))
-
 
         transformations = sorted(change["transformations"], key=lambda x: float(x["cosine"]), reverse=True)
-        new_transforms = []
+        d_vectors = []
         for trans in transformations:
-            #OPTIMIZATION: Only keep around a small number of word vectors for each optimzation.
-            if len(new_transforms) == num_examples:
+            #OPTIMIZATION: Only keep around a small number of word vectors for each rule.
+            if len(d_vectors) == num_examples:
                 break
 
             if rule_inverted:
@@ -60,16 +51,22 @@ def process_json(json_contents, vocab, word_vectors, num_examples=2):
 
             if longer_word in vocab and shorter_word in vocab:
                 direction_vector = word_vectors[shorter_word] - word_vectors[longer_word]
-                new_transforms.append((to_str, direction_vector))
+                d_vectors.append(direction_vector)
             
-        morph_transforms[from_str][rule_kind].extend(new_transforms)
+        transforms_dict[rule_kind][from_str][to_str].extend(d_vectors)
+    
+    #Build a final list of all transformations.
+    morph_transforms = []
+    for rule_kind in transforms_dict:
+        for from_str in transforms_dict[rule_kind]:
+            for to_str in transforms_dict[rule_kind][from_str]:
+                d_vectors = tuple(transforms_dict[rule_kind][from_str][to_str])
+                morph_transforms.append((rule_kind, from_str, to_str, d_vectors))
     
     #Heuristic: Try transforms that lead to shorter words first.
-    for drop_string in morph_transforms:
-        morph_transforms[drop_string]["s"] = sorted(morph_transforms[drop_string]["s"], key=lambda x: len(x[0]))
-        morph_transforms[drop_string]["p"] = sorted(morph_transforms[drop_string]["p"], key=lambda x: len(x[0]))
+    morph_transforms = sorted(morph_transforms, key=lambda x: len(x[2]))
 
-    return max_suffix_drop, max_prefix_drop, morph_transforms
+    return morph_transforms
 
 
 def get_drop_string(from_str, to_str, rule_kind):
@@ -142,7 +139,7 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
         i += 1 
        
     #DEBUG
-    to_write = sorted(list(presegs.keys()), key=lambda x: len(x), reverse=True)
+    to_write = sorted(list(presegs.keys()))
     #return presegs
     
     segs_output_obj = open("debug_temp/" + "pre_segs.txt", "w+")
@@ -183,36 +180,33 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
         pdb.set_trace()
 
 
-def check_transform_similarity(word, new_string, direction_vector, vocab, word_vectors, threshold=0.3):
+def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold=0.3):
     if new_string in vocab:
-        new_vector = word_vectors[word] + direction_vector
-        if cosine_similarity(new_vector, word_vectors[new_string]) > threshold:
-            print(word + " ---> " + new_string)
-            return True
+        for direction_vector in d_vectors:
+            new_vector = word_vectors[word] + direction_vector
+            if cosine_similarity(new_vector, word_vectors[new_string]) > threshold:
+                print(word + " ---> " + new_string)
+                return True
     return False
         
 
 def test_transforms(word, morph_transforms, vocab, word_vectors):
-    max_scan = max(max_suffix_drop, max_prefix_drop)
-    max_scan = min(max_scan, len(word))
-    for i in range(1, max_scan + 1):
-        if i <= max_suffix_drop:
-            suffix = word[-i:]
-            for transform in morph_transforms[suffix]["s"]:
-                to_str = transform[0]
+    for transform in morph_transforms:
+        rule_kind, from_str, to_str, d_vectors = transform
+        i = len(from_str)
+        if i < len(word):
+            if rule_kind == "s":
+                if word[-i:] != from_str:
+                    continue
                 new_string = word[:-i] + to_str
-                if check_transform_similarity(word, new_string, transform[1], vocab, word_vectors):
-                    return "s", suffix, new_string 
-
-        elif i <= max_prefix_drop:
-            prefix = word[:i]
-            for transform in morph_transforms[prefix]["p"]:
-                to_str = transform[0]
+            else:
+                if word[:i] != from_str:
+                    continue
                 new_string = to_str + word[i:]
-                if check_transform_similarity(word, new_string, transform[1], vocab, word_vectors):    
-                    return "p", prefix, new_string
-
-
+            if check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors):   
+                return rule_kind, from_str, new_string
+    
+    
 
 if __name__ == '__main__':
 
@@ -244,5 +238,5 @@ if __name__ == '__main__':
         vocab = get_vocabulary(open(data_directory, "r"))
         test_set = list(vocab.keys())
         
-    max_suffix_drop, max_prefix_drop, morph_transforms = process_json(json_contents, vocab, word_vectors)   
+    morph_transforms = process_json(json_contents, vocab, word_vectors)   
     compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set)
