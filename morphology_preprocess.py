@@ -129,12 +129,12 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
                 propogation_graph.add_edge(parent_word, word, link = [1])
             print(presegs[word])
 
-            # #Core of the propogation algorithm!
-            # if use_propogation:
-            #     propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
+            #Core of the propogation algorithm!
+            if use_propogation:
+                propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
 
-            # if test_set:
-            #     target_words.append(parent_word)
+            if seg_eval:
+                target_words.append(parent_word)
               
         i += 1 
        
@@ -167,6 +167,10 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
                 if segment[-len(drop_str):] == drop_str and len(segment) > len(drop_str):
                     presegs[child][idx] = segment[:-len(drop_str)]
                     presegs[child].insert(idx + 1, drop_str)
+                    print("")
+                    print("PROPOGATION!")
+                    print(presegs[child])
+                    print("")
                     link.append(max(link) + 1)
                     propogate_to_children(graph, presegs, child, idx, drop_str, kind)
         
@@ -174,6 +178,10 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
                 if segment[:len(drop_str)] == drop_str and len(segment) > len(drop_str):
                     presegs[child][idx] = drop_str
                     presegs[child].insert(idx + 1, segment[len(drop_str):])
+                    print("")
+                    print("PROPOGATION!")
+                    print(presegs[child])
+                    print("")
                     link.append(max(link) + 1)
                     propogate_to_children(graph, presegs, child, idx, drop_str, kind)
     except Exception as e:
