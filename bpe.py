@@ -88,7 +88,7 @@ def get_vocabulary_freq_table(fobj, word_vectors):
 def apply_presegs(vocab, presegs):
     vocab = copy.deepcopy(vocab)   
     for word in presegs:
-        if len(presegs[word]) > 1:
+        if word in vocab and len(presegs[word]) > 1:
             freq = vocab[word]
             vocab[word] -= freq
             for part in presegs[word]:
@@ -98,11 +98,14 @@ def apply_presegs(vocab, presegs):
 
 def recover_preseg_boundary(vocab, presegs, segmentations_in):
     segmentations_out = {}
-    for word in presegs:
-        final_seg = []
-        for part in presegs[word]:
-            final_seg.extend(segmentations_in[part])
-        segmentations_out[word] = final_seg
+    for word in vocab:
+        if word in presegs:
+            final_seg = []
+            for part in presegs[word]:
+                final_seg.extend(segmentations_in[part])
+            segmentations_out[word] = final_seg
+        else:
+            segmentations_out[word] = segmentations_in[word]
     return segmentations_out
 
 
@@ -173,7 +176,7 @@ def get_set_cohesion(word_set, word_vectors):
 
 
 #Updates the quick_pairs and segmentations data structures for a given word.
-def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, \
+def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, \
     segmentations, freq_changes, all_freqs, update_caches):
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 < len(segmentations[word]):
@@ -213,7 +216,7 @@ def core_word_update(word, pair, new_symbol, first_index, second_index, quick_pa
         
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
-def merge_update(pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold):
+def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold):
     #Helper for decting when the last occurance of a character in a word vanishes
     def remove_word_check(word, in_part):
         for part in segmentations[word]:
@@ -230,7 +233,7 @@ def merge_update(pair, quick_pairs, quick_find, segmentations, freq_cache, all_f
     while involved_words:
         word, first_index, second_index = involved_words.pop()
 
-        core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, all_freqs, True)
+        core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, all_freqs, True)
 
         #Remove the mapping of the word and old symbols from the quick_find structure
         if remove_word_check(word, pair[0]):
@@ -334,7 +337,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None):
             while involved_words:
                 word, first_index, second_index = involved_words.pop()
                 #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
-                core_word_update(word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), Counter(), False)
+                core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), Counter(), False)
             quick_pairs.pop(pair)
             
     return segmentations
@@ -344,7 +347,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None):
 def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     corpus_obj = open(corpus_path, "r")
     output_obj = open(output_path, "w+")
-    for line in args.input:
+    for line in corpus_obj:
         parsed_contents = []
         for word in line.split():
             word_seg = segmentations[word]
@@ -404,7 +407,7 @@ def segment_vocab(vocab, num_iterations):
 
         sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))                           
         
-        merge_update(best_pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold)
+        merge_update(vocab, best_pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold)
         merges_done.append(best_pair)
 
     return segmentations, merges_done

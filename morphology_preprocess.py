@@ -188,7 +188,7 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
         pdb.set_trace()
 
 
-def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold=0.3):
+def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold=0.5):
     if new_string in vocab:
         for direction_vector in d_vectors:
             new_vector = word_vectors[word] + direction_vector
