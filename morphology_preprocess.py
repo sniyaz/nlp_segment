@@ -88,7 +88,7 @@ def get_drop_string(from_str, to_str, rule_kind):
     return from_str, to_str
     
 
-def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
+def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, threshold=0.5):
 
     propogation_graph = nx.DiGraph()  
     vocab = list(vocabulary.keys())
@@ -118,7 +118,7 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None):
         word = target_words[0]
         target_words = target_words[1:]
         presegs[word] = [word]
-        possible_change = test_transforms(word, morph_transforms, vocab, word_vectors)
+        possible_change = test_transforms(word, morph_transforms, vocab, word_vectors, threshold)
         if possible_change:
             change_kind, drop_str, parent_word = possible_change
             if change_kind == "s":
@@ -188,7 +188,7 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
         pdb.set_trace()
 
 
-def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold=0.5):
+def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold):
     if new_string in vocab:
         for direction_vector in d_vectors:
             new_vector = word_vectors[word] + direction_vector
@@ -198,7 +198,7 @@ def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors,
     return False
         
 
-def test_transforms(word, morph_transforms, vocab, word_vectors):
+def test_transforms(word, morph_transforms, vocab, word_vectors, threshold):
     for transform in morph_transforms:
         rule_kind, from_str, to_str, d_vectors = transform
         i = len(from_str)
@@ -211,7 +211,7 @@ def test_transforms(word, morph_transforms, vocab, word_vectors):
                 if word[:i] != from_str:
                     continue
                 new_string = to_str + word[i:]
-            if check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors):   
+            if check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold):   
                 return rule_kind, from_str, new_string
     
     
@@ -225,6 +225,9 @@ if __name__ == '__main__':
     use_propogation = int(sys.argv[4])
     #Bit for if we are doing toy seg_eval experiment
     seg_eval = int(sys.argv[5])
+
+    threshold = float(sys.argv[6])
+    k = int(sys.argv[7])
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
     json_contents = json.load(open(transforms_file, "r"))
@@ -245,6 +248,10 @@ if __name__ == '__main__':
     else:
         vocab = get_vocabulary(open(data_directory, "r"))
         test_set = list(vocab.keys())
+        #Use Hyperparamter 2 (that blocks presegs on words above a certain freq.)
+        test_set = sorted(test_set, key = lambda x: vocab[x], reverse=True)
+        test_set = test_set[k:]
         
     morph_transforms = process_json(json_contents, vocab, word_vectors)   
-    compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set)
+    compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set, threshold)
+    
