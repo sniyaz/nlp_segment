@@ -251,7 +251,7 @@ if __name__ == '__main__':
         #Use Hyperparamter 2 (that blocks presegs on words above a certain freq.)
         test_set = sorted(test_set, key = lambda x: vocab[x], reverse=True)
         test_set = test_set[k:]
-        
+       
     morph_transforms = process_json(json_contents, vocab, word_vectors)   
-    compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set, threshold)
+    compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set, threshold=threshold)
     
