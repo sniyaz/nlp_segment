@@ -21,7 +21,7 @@ if __name__ == '__main__':
     src_presegs = open(src_presegs_file, "rb")
     src_presegs = pickle.load(src_presegs)
     target_presegs = open(target_presegs_file, "rb")
-    target_presegs = pickle.load(target_presegs)\
+    target_presegs = pickle.load(target_presegs)
 
     #PHASE 1: THE TRAINING CORPORA
     

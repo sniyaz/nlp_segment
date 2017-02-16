@@ -108,6 +108,25 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
             segmentations_out[word] = segmentations_in[word]
     return segmentations_out
 
+#Write out all of the segmentations for words in vocab. Used to compare algorithms. 
+def write_segmentation_list(out_name, vocab, segmentations):
+    #Write out the segmentations of each word in the corpus.
+    segs_output_obj = open(out_name + "_segs.txt", "w+")
+    to_write = list(vocab.keys())
+    to_write.sort()
+    #Write the word segmentations to the output file
+    for word in to_write:
+        final_seg = segmentations[word]
+         # don't print end-of-word symbols
+        if final_seg[-1] == '</w>':
+            final_seg = final_seg[:-1]
+        elif final_seg[-1].endswith('</w>'):
+            final_seg = final_seg[:-1] + [final_seg[-1].replace('</w>','')]
+        delimited_seg = " ".join(final_seg)
+        segs_output_obj.write(word + ": " + delimited_seg)
+        segs_output_obj.write('\n')
+    segs_output_obj.close()
+
 
 #Needed if doing BPE with tie breaking. Big table of all pair frequencies
 def get_pair_statistics(vocab, segmentations):
@@ -309,14 +328,15 @@ def draw_frequent_pairs(freq_cache):
 
 
 #Take a list of trained merge operations a apply them to a new vocabulary!
-def apply_merge_ops(vocab, merge_operations, num_symbols=None):
+def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
     segmentations = {}
     quick_pairs = defaultdict(lambda: set())
     
     for word in vocab:
         #Set up segmentations data structure
         seg = list(word)
-        #seg.append("</w>")
+        if use_eol:
+            seg.append("</w>")
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):
@@ -363,7 +383,7 @@ def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     output_obj.close()
 
 
-def segment_vocab(vocab, num_iterations):
+def segment_vocab(vocab, num_iterations, use_eol=False):   
     segmentations = {}
     
     #Dict that maps characters to words containing them
@@ -378,7 +398,8 @@ def segment_vocab(vocab, num_iterations):
     for word in vocab:
         #Set up segmentations data structure
         seg = list(word)
-        #seg.append("</w>")
+        if use_eol:
+            seg.append("</w>")
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):
@@ -451,17 +472,7 @@ if __name__ == '__main__':
     segmentations, merges_done = segment_vocab(vocab, num_iterations)
 
     #Write out the segmentations of each word in the corpus.
-    segs_output_obj = open(args.output + "_segs.txt", "w+")
-    to_write = list(vocab.keys())
-    to_write.sort()
-    #Write the word segmentations to the output file
-    for word in to_write:
-        final_seg = segmentations[word]
-        delimited_seg = " ".join(final_seg)
-        segs_output_obj.write(word + ": " + delimited_seg)
-        segs_output_obj.write('\n')
-    segs_output_obj.close()
-
+    write_segmentation_list(args.output, vocab, segmentations)
 
     #Write out the merge operations in the order they were done.
     merge_ops_output_obj = open(args.output + "_merge_ops.txt", "w+")
