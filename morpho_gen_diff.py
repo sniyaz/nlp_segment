@@ -1,7 +1,7 @@
 import sys
 import pickle
 import os
-from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, write_segmentation_list
+from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, write_segmentation_list, remove_eols
 from copy import deepcopy
 from collections import Counter
 
@@ -10,6 +10,9 @@ import pdb
 """Compare our segmentations with those from a BPE implementation"""
 
 if __name__ == '__main__':
+
+    #Absolutely horrific coding style that makes this an apples to apples comparison.
+    PYTHONHASHSEED = 0
 
     corpus_file = sys.argv[1]
     presegs_file = sys.argv[2]
@@ -36,7 +39,7 @@ if __name__ == '__main__':
     #Now...do the baseline!
     base_vocab = get_vocabulary(corpus)
     corpus.close()
-    base_segmentations, base_operations = segment_vocab(base_vocab, num_iters, use_eol=True)
+    base_segmentations, base_operations = segment_vocab(base_vocab, num_iters, use_eol=False)
     write_segmentation_list(output_name + "_base", base_vocab, base_segmentations)
 
    

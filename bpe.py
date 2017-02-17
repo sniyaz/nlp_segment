@@ -110,23 +110,28 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
 
 #Write out all of the segmentations for words in vocab. Used to compare algorithms. 
 def write_segmentation_list(out_name, vocab, segmentations):
+    segmentations = remove_eols(segmentations)
     #Write out the segmentations of each word in the corpus.
     segs_output_obj = open(out_name + "_segs.txt", "w+")
     to_write = list(vocab.keys())
     to_write.sort()
     #Write the word segmentations to the output file
     for word in to_write:
-        final_seg = segmentations[word]
-         # don't print end-of-word symbols
-        if final_seg[-1] == '</w>':
-            final_seg = final_seg[:-1]
-        elif final_seg[-1].endswith('</w>'):
-            final_seg = final_seg[:-1] + [final_seg[-1].replace('</w>','')]
-        delimited_seg = " ".join(final_seg)
+        delimited_seg = " ".join(segmentations[word])
         segs_output_obj.write(word + ": " + delimited_seg)
         segs_output_obj.write('\n')
     segs_output_obj.close()
 
+#Strip all eol markers from the segmentations.
+def remove_eols(segmentations):
+    for word in segmentations.keys():
+        final_seg = segmentations[word]
+        if final_seg[-1] == '</w>':
+            final_seg = final_seg[:-1]
+        elif final_seg[-1].endswith('</w>'):
+            final_seg = final_seg[:-1] + [final_seg[-1].replace('</w>','')]
+        segmentations[word] = final_seg
+    return segmentations
 
 #Needed if doing BPE with tie breaking. Big table of all pair frequencies
 def get_pair_statistics(vocab, segmentations):
