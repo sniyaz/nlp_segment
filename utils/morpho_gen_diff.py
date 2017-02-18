@@ -1,6 +1,7 @@
 import sys
 import pickle
 import os
+sys.path.append("../")
 from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, write_segmentation_list, remove_eols
 from copy import deepcopy
 from collections import Counter
