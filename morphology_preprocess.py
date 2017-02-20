@@ -142,7 +142,7 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, th
     to_write = sorted(list(presegs.keys()))
     #return presegs
     
-    segs_output_obj = open("debug_temp/" + "pre_segs.txt", "w+")
+    segs_output_obj = open(save_dir + "pre_segs.txt", "w+")
     for word in to_write:
         final_seg = presegs[word]
         delimited_seg = " ".join(final_seg)
@@ -150,7 +150,7 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, th
         segs_output_obj.write('\n')
     segs_output_obj.close()
 
-    with open(os.path.join("debug_temp/", "presegs_ckpt.txt"), "wb+") as checkpoint_file:
+    with open(os.path.join(save_dir, "presegs_ckpt.txt"), "wb+") as checkpoint_file:
         pickle.dump(presegs, checkpoint_file)
             
 
@@ -228,6 +228,8 @@ if __name__ == '__main__':
 
     threshold = float(sys.argv[6])
     k = int(sys.argv[7])
+
+    save_dir = sys.argv[8]
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
     json_contents = json.load(open(transforms_file, "r"))
