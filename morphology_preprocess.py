@@ -12,7 +12,7 @@ from evaluate_seg import get_gs_data
 import pdb
 import time
 
-def process_json(json_contents, vocab, word_vectors, num_examples=2):
+def process_json(json_contents, vocab, word_vectors, num_examples=float("inf")):
     #Satanic code that makes a three-layer dictionary.
     transforms_dict = defaultdict( lambda: defaultdict( lambda: defaultdict(lambda: []) ) )
 
@@ -190,9 +190,9 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
 
 def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold):
     if new_string in vocab:
+        canidate_direction_vector = word_vectors[new_string] - word_vectors[word]
         for direction_vector in d_vectors:
-            new_vector = word_vectors[word] + direction_vector
-            if cosine_similarity(new_vector, word_vectors[new_string]) > threshold:
+            if cosine_similarity(canidate_direction_vector, direction_vector) > threshold:
                 print(word + " ---> " + new_string)
                 return True
     return False
