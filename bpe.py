@@ -388,7 +388,8 @@ def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     output_obj.close()
 
 
-def segment_vocab(vocab, num_iterations, use_eol=False):   
+def segment_vocab(vocab, num_iterations, use_eol=False, valid_freq=None, valid_func=None):   
+    val_scores = []
     segmentations = {}
     
     #Dict that maps characters to words containing them
@@ -424,7 +425,10 @@ def segment_vocab(vocab, num_iterations, use_eol=False):
 
     #Core algorithm
     for i in range(num_iterations):
-        
+        if valid_freq != None and i%valid_freq == 0:
+            #Note that expected form for a validation function is f(segs, op_number)
+            cur_score = valid_func(segmentations, i)
+            val_scores.append(cur_score)
         #Has the max frequencey cache gone dry?
         threshold = check_cache(freq_cache, threshold, all_freqs, i)
 
@@ -435,6 +439,12 @@ def segment_vocab(vocab, num_iterations, use_eol=False):
         
         merge_update(vocab, best_pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold)
         merges_done.append(best_pair)
+
+    if valid_freq != None:
+        #Get one last validation on the max number of segs
+        cur_score = valid_func(segmentations, num_iterations)
+        val_scores.append(cur_score)
+        return segmentations, merges_done, val_scores
 
     return segmentations, merges_done
 

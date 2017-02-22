@@ -41,6 +41,30 @@ def create_parser():
   
     return parser
 
+#Thank you Papa DeNero for teaching me environment diagrams.
+def base_valid_func(base_segs, op_number):
+    num_merges = op_number
+    save_folder = os.path.join(args.output, str(num_merges) + "_merges")
+    if not os.path.isdir(save_folder):
+        os.makedirs(save_folder)
+    bpe_folder = os.path.join(save_folder, "bpe_folder")
+    os.makedirs(bpe_folder)
+    bpe_eval_file = os.path.join(bpe_folder, "eval_output.txt")
+    bpe_fmeasure =  call_evaluation(base_segs, eval_order, gold_standard_file, result_dir=bpe_folder)
+    return bpe_fmeasure
+
+def morpho_valid_func(morpho_segs, op_number):
+    num_merges = op_number 
+    save_folder = os.path.join(args.output, str(num_merges) + "_merges")
+    if not os.path.isdir(save_folder):
+        os.makedirs(save_folder)
+    morph_folder = os.path.join(save_folder, "morph_folder")
+    os.makedirs(morph_folder)
+    morph_eval_file = os.path.join(morph_folder, "eval_output.txt")
+    morpho_segs = recover_preseg_boundary(vocab, presegs, morpho_segs)
+    morph_fmeasure = call_evaluation(morpho_segs, eval_order, gold_standard_file, result_dir=morph_folder)
+    return morph_fmeasure
+
 
 if __name__ == '__main__':
 
@@ -60,38 +84,11 @@ if __name__ == '__main__':
     vocab = get_vocabulary(args.corpus) 
     preseg_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
 
-    _, base_operations = segment_vocab(vocab, max_merges)
-    _, morpho_operations = segment_vocab(preseg_vocab, max_merges)
+    _, __, bpe_scores = segment_vocab(vocab, max_merges, valid_freq=granularity, valid_func=base_valid_func)
+    _, __, morph_scores= segment_vocab(preseg_vocab, max_merges, valid_freq=granularity, valid_func=morpho_valid_func)
 
-    num_symbols = []
-    bpe_scores = []
-    morph_scores = []
-    
-    num_merges = 0
-    while (num_merges <= max_merges):
-        save_folder = os.path.join(args.output, str(num_merges) + "_merges")
-        os.system("mkdir " + save_folder)
-        bpe_folder = os.path.join(save_folder, "bpe_folder")
-        os.system("mkdir " + bpe_folder)
-        morph_folder = os.path.join(save_folder, "morph_folder")
-        os.system("mkdir " + morph_folder)
-        bpe_eval_file = os.path.join(bpe_folder, "eval_output.txt")
-        morph_eval_file = os.path.join(morph_folder, "eval_output.txt")
-
-        base_segs = apply_merge_ops(vocab, base_operations, num_merges) 
-        morpho_segs = apply_merge_ops(preseg_vocab, morpho_operations, num_merges)
-        morpho_segs = recover_preseg_boundary(vocab, presegs, morpho_segs)
-        
-        bpe_fmeasure =  call_evaluation(base_segs, eval_order, gold_standard_file, result_dir=bpe_folder)
-        morph_fmeasure = call_evaluation(morpho_segs, eval_order, gold_standard_file, result_dir=morph_folder)
-
-        num_symbols.append(num_merges)
-        bpe_scores.append(bpe_fmeasure)
-        morph_scores.append(morph_fmeasure)
-        
-        num_merges += granularity
-
-    
+    num_symbols = list(range(0, max_merges + 1, granularity))
+               
     plt.plot(num_symbols, bpe_scores, "r")
     plt.plot(num_symbols, morph_scores, "b")
     plt.yticks(np.arange(20, 70, 5.0))
