@@ -8,12 +8,15 @@ import json
 import numpy as np
 import copy
 import csv
-import matplotlib.pyplot as plt
 from collections import defaultdict, Counter
 
 from evaluate_seg import get_gs_data, call_evaluation, extract_fmeasure, get_merge_ops_list
 sys.path.append("../")
 from bpe import get_vocabulary, apply_presegs, recover_preseg_boundary, apply_merge_ops, segment_vocab
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 import pdb
 
@@ -65,6 +68,32 @@ def morpho_valid_func(morpho_segs, op_number):
     morph_fmeasure = call_evaluation(morpho_segs, eval_order, gold_standard_file, result_dir=morph_folder)
     return morph_fmeasure
 
+def gen_result_summary(num_symbols, bpe_scores, morph_scores, output_folder):
+    plt.plot(num_symbols, bpe_scores, sns.xkcd_rgb["pale red"], lw=3)
+    plt.plot(num_symbols, morph_scores, sns.xkcd_rgb["denim blue"], lw=3)
+    plt.yticks(np.arange(20, 70, 5.0))
+    plt.xlabel("Merge Operations")
+    plt.ylabel("F-measure")
+    blue_patch = mpatches.Patch(color=sns.xkcd_rgb["denim blue"], label='BPE with pre-segmentations')
+    red_patch = mpatches.Patch(color=sns.xkcd_rgb["pale red"], label='BPE')
+    plt.legend(handles=[blue_patch, red_patch])
+    plot_filename = os.path.join(output_folder, "summary_plt.png")
+    plt.savefig(plot_filename)
+
+    #Write out a CSV of results in table form....
+    results_csv = os.path.join(output_folder, "results_table.csv")
+    with open(results_csv, 'w+') as csvfile:
+        results_writer = csv.writer(csvfile)
+        results_writer.writerow(["Num Iterations", "BPE Scores", "Morpho Scores"])
+        results_writer.writerow(["", "", ""])
+        scores = zip(bpe_scores, morph_scores)
+        for iterations, score_pair in zip(num_symbols, scores):
+            results_writer.writerow([str(iterations) , str(score_pair[0]) , str(score_pair[1])])
+        results_writer.writerow(["", "", ""])
+        results_writer.writerow(["Morpho Peak: ", str(max(morph_scores))])
+        results_writer.writerow(["BPE Peak: ", str(max(bpe_scores))])
+
+
 
 if __name__ == '__main__':
 
@@ -88,28 +117,8 @@ if __name__ == '__main__':
     _, __, morph_scores= segment_vocab(preseg_vocab, max_merges, valid_freq=granularity, valid_func=morpho_valid_func)
 
     num_symbols = list(range(0, max_merges + 1, granularity))
-               
-    plt.plot(num_symbols, bpe_scores, "r")
-    plt.plot(num_symbols, morph_scores, "b")
-    plt.yticks(np.arange(20, 70, 5.0))
-    plt.xlabel("BPE Iterations")
-    plt.ylabel("F-Measure")
-    plot_filename = os.path.join(args.output, "summary_plt.png")
-    plt.savefig(plot_filename)
 
-    #Write out a CSV of results in table form....
-    results_csv = os.path.join(args.output, "results_table.csv")
-    with open(results_csv, 'w+') as csvfile:
-        results_writer = csv.writer(csvfile)
-        results_writer.writerow(["Num Iterations", "BPE Scores", "Morpho Scores"])
-        results_writer.writerow(["", "", ""])
-        scores = zip(bpe_scores, morph_scores)
-        for iterations, score_pair in zip(num_symbols, scores):
-            results_writer.writerow([str(iterations) , str(score_pair[0]) , str(score_pair[1])])
-        results_writer.writerow(["", "", ""])
-        results_writer.writerow(["Morpho Peak: ", str(max(morph_scores))])
-        results_writer.writerow(["BPE Peak: ", str(max(bpe_scores))])
-
+    gen_result_summary(num_symbols, bpe_scores, morph_scores, args.output)
 
     
     
