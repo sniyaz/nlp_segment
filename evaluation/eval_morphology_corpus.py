@@ -13,7 +13,7 @@ from collections import defaultdict, Counter
 
 from evaluate_seg import get_gs_data, call_evaluation, extract_fmeasure, get_merge_ops_list
 sys.path.append("../")
-from bpe import get_vocabulary_freq_table, apply_presegs, recover_preseg_boundary, apply_merge_ops
+from bpe import get_vocabulary, apply_presegs, recover_preseg_boundary, apply_merge_ops, segment_vocab
 
 import pdb
 
@@ -23,7 +23,7 @@ def create_parser():
         description="learn BPE-based word segmentation")
 
     parser.add_argument(
-        '--input', '-i', type=argparse.FileType('r'), default=sys.stdin,
+        '--corpus', '-c', type=argparse.FileType('r'), default=sys.stdin,
         metavar='PATH',
         help="Input corpus for evaluation")
     parser.add_argument(
@@ -53,11 +53,11 @@ if __name__ == '__main__':
     gold_standard = {}
     eval_order = []
     get_gs_data(args.gold_standard, gold_standard, eval_order)
-    gold_standard_file = 
+    gold_standard_file = args.gold_standard.name
 
     presegs = pickle.load(args.pre_segs)
  
-    vocab = get_vocabulary(corpus) 
+    vocab = get_vocabulary(args.corpus) 
     preseg_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
 
     _, base_operations = segment_vocab(vocab, max_merges)
@@ -94,8 +94,6 @@ if __name__ == '__main__':
     
     plt.plot(num_symbols, bpe_scores, "r")
     plt.plot(num_symbols, morph_scores, "b")
-    #Add morfessor baseline to plot
-    plt.axhline(y=morfessor_fmeasure, linewidth=2, color='g')
     plt.yticks(np.arange(20, 70, 5.0))
     plt.xlabel("BPE Iterations")
     plt.ylabel("F-Measure")
@@ -112,7 +110,6 @@ if __name__ == '__main__':
         for iterations, score_pair in zip(num_symbols, scores):
             results_writer.writerow([str(iterations) , str(score_pair[0]) , str(score_pair[1])])
         results_writer.writerow(["", "", ""])
-        results_writer.writerow(["Morfessor Baseline: ", str(morfessor_fmeasure)])
         results_writer.writerow(["Morpho Peak: ", str(max(morph_scores))])
         results_writer.writerow(["BPE Peak: ", str(max(bpe_scores))])
 
