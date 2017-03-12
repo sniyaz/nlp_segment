@@ -1,3 +1,7 @@
+"""
+Algorithm that generates pre-segmentations on a target corpus. See the write up for more on 
+how exactly this process works.
+"""
 import json
 import pickle
 from collections import defaultdict
@@ -13,6 +17,21 @@ import pdb
 import time
 
 def process_json(json_contents, vocab, word_vectors, num_examples=float("inf")):
+    """
+    Extends a list of example morphological transformations to the given corpus/vocab. Does this
+    via a set of vector embeddings, which need to be trained before-hand.
+
+    Arguments:
+    json_contents -- json object containing the example transformations (format currently defined by the 
+    json output from John's Soricut and Och implementation)
+    vocab -- Dict of (word -> freq). Extracted from target corpus.
+    word_vectors -- Dict of word -> embeddings. Trained on target corpus.
+    num_examples -- for some input rule from json file, max number of example direction vectors to store (for speed).
+
+    Returns:
+    morph_transforms -- This is a weirdly formatted dictionary (to speed up later code).
+    General structure: Rule Kind -> From String -> To String -> Example Direction Vectors. 
+    """
     #Satanic code that makes a three-layer dictionary.
     transforms_dict = defaultdict( lambda: defaultdict( lambda: defaultdict(lambda: []) ) )
 
@@ -70,6 +89,20 @@ def process_json(json_contents, vocab, word_vectors, num_examples=float("inf")):
 
 
 def get_drop_string(from_str, to_str, rule_kind):
+    """
+    Gets drop strings (from string and to string) using the old and new words.
+
+    Arguments:
+    from_str -- Longer word in transformation. Will be whittled down.
+    to_str -- Shorter word in transformation. Will be whittled down.
+    rule_kind -- indicates prefix or suffix.
+
+    Returns:
+    from_str -- Smallest substring of longer word that, when removed from longer word, makes 
+    the remaining string a substring of the shorter word.
+    to_str -- Smallest substring of shorter word that, when removed from shorter word, makes 
+    the remaining string a substring of the longer word.
+    """
     if rule_kind == "s":
         for char in to_str[:]:
             if from_str[0] == char:
@@ -89,7 +122,20 @@ def get_drop_string(from_str, to_str, rule_kind):
     
 
 def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, threshold=0.5):
+    """
+    Heart and soul of pre-segmentation algorithm. 
 
+    Arguments:
+    vocabulary -- Dict of (word -> freq). Extracted from target corpus.
+    word_vectors -- Dict of word -> embeddings. Trained on target corpus.
+    morph_transforms -- generalized morphological transformations (from process_json)
+    test_set -- If present, a smaller set of words to pre-segment.
+    threshold -- minimum cosine similarity needed to trigger a pre-segmentation.
+
+    Returns:
+    None. Writes a pickle of the generated pre-segmentations to the save directory give in args,
+    as well as a list of pre-segmentations generated.
+    """
     propogation_graph = nx.DiGraph()  
     vocab = list(vocabulary.keys())
     #Go from longer words to shorter ones since we apply "drop" rules
@@ -155,6 +201,12 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, th
             
 
 def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
+    """
+    Propogates segmentations of a word to longer words of which it is a base. Uses a graph where
+    each word is a node with edges to longer words it is a base of.
+
+    Example: give -> giving.
+    """
     try:
         for child in graph.successors(word):
             link = graph[word][child]["link"]
@@ -193,6 +245,20 @@ def cosine_similarity(vec1, vec2):
 
 
 def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold):
+    """
+    Test whether a transformation should be applied to a word, creating a pre-segmentation for that word.
+
+    Arguments:
+    word -- word we are testing a transformation on.
+    new_string -- word that applying this transformation would create.
+    d_vectors -- Example direction vectors for the transformation being tested.
+    vocab -- Dict of (word -> freq). Extracted from target corpus.
+    word_vectors -- Dict of word -> embeddings. Trained on target corpus.
+    threshold -- minimum cosine similarity needed to trigger a pre-segmentation.
+    
+    Returns:
+    Boolean that indicates whether transformation passed the cosine similarity threshold.
+    """
     if new_string in vocab:
         canidate_direction_vector = word_vectors[new_string] - word_vectors[word]
         for direction_vector in d_vectors:
@@ -203,6 +269,22 @@ def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors,
         
 
 def test_transforms(word, morph_transforms, vocab, word_vectors, threshold):
+    """
+    For a single word, iterate through all generalized transformations and potentially create a 
+    new pre-segmentation for the current word.
+
+    Arguments:
+    word -- word we are testing a transformation on.
+    morph_transforms -- generalized morphological transformations (from process_json)
+    vocab -- Dict of (word -> freq). Extracted from target corpus.
+    word_vectors -- Dict of word -> embeddings. Trained on target corpus.
+    threshold -- minimum cosine similarity needed to trigger a pre-segmentation.
+    
+    Returns:
+    IF some transformation passed the threshold, return the type (prefix or suffix) that 
+    transformation was, the from string (dropped from the input/longer word), and the new word that
+    was formed.
+    """
     for transform in morph_transforms:
         rule_kind, from_str, to_str, d_vectors = transform
         i = len(from_str)
