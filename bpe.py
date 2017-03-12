@@ -1,3 +1,7 @@
+"""
+Our own BPE implementation. Breaks process up into steps that make running experiments more easy. Also supports
+use of pre-segmentations.
+"""
 from __future__ import unicode_literals, division
 
 import sys
@@ -35,7 +39,7 @@ def create_parser():
         description="test and report with our algorithm")
     parser.add_argument(
         '--mode', action="store",
-        help="1 -> Vanilla BPE, 2-> Tie Breaking BPE")
+        help="1 -> Vanilla BPE, 2-> BPE with pre-segmentations")
     parser.add_argument(
         '--input', '-i', type=argparse.FileType('r'), default=sys.stdin,
         metavar='PATH',
@@ -56,6 +60,12 @@ def create_parser():
 
 
 def get_vocabulary(fobj):
+    """
+    Returns the vocab dictionary (map of word -> freq) from an object file.
+
+    Arguments:
+    fobj -- corpus file object
+    """
     fobj.seek(0)
     vocab = Counter()
     for line in fobj:
@@ -67,10 +77,14 @@ def get_vocabulary(fobj):
 
 
 def get_vocabulary_freq_table(fobj, word_vectors):
+    """
+    Returns the vocab dictionary (map of word -> freq) from an object file. However, 
+    the file is just a list of (word, freq) pairs instead of a full passage.
+
+    Arguments:
+    fobj -- corpus file object
+    """
     fobj.seek(0)
-    #Write out a pure corpus so we know what we trained on. "Pure" means it was in the 300k word vectors.
-    # pure_corpus_obj = open(args.output + "_pure_corpus.txt", "w+")
-    # exluded_corpus_obj = open(args.output + "_excluded_corpus.txt", "w+") 
     vocab = Counter()
     for line in fobj:
         original_line = line
@@ -86,6 +100,17 @@ def get_vocabulary_freq_table(fobj, word_vectors):
 
 
 def apply_presegs(vocab, presegs):
+    """
+    Applies pre-segmentations to a given vocab. Non-destructive method.
+
+    Arguments:
+    vocab -- Dict of (word -> freq)
+    presegs -- Dict of word -> pre-segmentations (A pre-segmentation is 
+    represented as a list of word parts.)
+
+    Returns:
+    New vocab where each word has been split up by pre-segmentation.
+    """
     vocab = copy.deepcopy(vocab)   
     for word in presegs:
         if word in vocab and len(presegs[word]) > 1:
@@ -97,6 +122,24 @@ def apply_presegs(vocab, presegs):
 
 
 def recover_preseg_boundary(vocab, presegs, segmentations_in):
+    """
+    Returns final set of segmentations, restoring words that were split up and 
+    eliminated from the vocabulary due to pre-segmentation.
+
+    Arguments:
+    vocab -- Dict of (word -> freq). Should be a vocab processed by apply_presegs.
+    presegs -- Dict of word -> pre-segmentations (A pre-segmentation is 
+    represented as a list of word parts.)
+    segmentations_in -- segmentations for the input vocab. Dict of word -> list of word parts.
+
+    Returns:
+    Final segmentations for words in the ORIGINAL vocab (not the input one), which obey the 
+    boundaries from pre-segmentations. Note that this is a new object.
+
+    Note:
+    If you notice, our hacky way of enforcing these "pre-seg boundaries" is just splitting each word in the vocab into
+    pre-seg components, and then re-combining at the en. 
+    """
     segmentations_out = {}
     for word in vocab:
         if word in presegs:
@@ -108,8 +151,20 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
             segmentations_out[word] = segmentations_in[word]
     return segmentations_out
 
-#Write out all of the segmentations for words in vocab. Used to compare algorithms. 
+
 def write_segmentation_list(out_name, vocab, segmentations):
+    """
+    Writes a text file that contains a list of words in the vocab as well 
+    as their segmentations. Words in the output file are in alphabetical order.
+
+    Arguments:
+    out_name -- file name for the output file
+    vocab -- Dict of (word -> freq).
+    segmentations -- segmentations for the input vocab. Dict of word -> list of word parts.
+
+    Returns:
+    None
+    """
     segmentations = remove_eols(segmentations)
     #Write out the segmentations of each word in the corpus.
     segs_output_obj = open(out_name + "_segs.txt", "w+")
@@ -122,8 +177,18 @@ def write_segmentation_list(out_name, vocab, segmentations):
         segs_output_obj.write('\n')
     segs_output_obj.close()
 
-#Strip all eol markers from the segmentations.
+
 def remove_eols(segmentations):
+    """
+    Strip all eol markers from the segmentations. Uses when BPE algo is run with eol markers.
+    This method is destructive.
+
+    Arguments:
+    segmentations -- Dict of word -> list of word parts.
+
+    Returns:
+    segmentations -- same as input, but modified.
+    """
     for word in segmentations.keys():
         final_seg = segmentations[word]
         if final_seg[-1] == '</w>':
@@ -133,8 +198,18 @@ def remove_eols(segmentations):
         segmentations[word] = final_seg
     return segmentations
 
-#Needed if doing BPE with tie breaking. Big table of all pair frequencies
+
 def get_pair_statistics(vocab, segmentations):
+    """
+    Strip all eol markers from the segmentations. Uses when BPE algo is run with eol markers.
+    This method is destructive.
+
+    Arguments:
+    segmentations -- Dict of word -> list of word parts.
+
+    Returns:
+    segmentations -- same as input, but modified.
+    """
     all_freqs = Counter()
     for word, freq in vocab.items():
         seg = segmentations[word]
@@ -144,64 +219,32 @@ def get_pair_statistics(vocab, segmentations):
             prev_char = char
 
     return all_freqs
-
-
-def word_similarity(word1, word2):
-    vec1 = word_vectors[word1]
-    vec2 = word_vectors[word2]
-    return cosine_similarity(vec1, vec2)
     
 
-def cosine_similarity(vec1, vec2):
-    return np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2))
-
-
-#Euclidean distance between 2 vectors
-def distance(vec1, vec2):
-    difference = vec1 - vec2
-    return np.linalg.norm(difference)
-
-
-def get_mean(sample_set, word_vectors):
-    if not sample_set:
-        return 0
-    
-    average = None
-    for sample in sample_set:
-        if average is None:
-            average = word_vectors[sample[0]]
-        else:
-            #We only care about the word in the tuple
-            average = average + word_vectors[sample[0]]
-           
-    average = average/len(sample_set)
-    return average
-
-
-def get_set_cohesion(word_set, word_vectors):
-    involved_words = [i[0] for i in word_set]
-    pair_words = set()
-    for word in involved_words:
-        pair_words.add((word,))
-    if len(pair_words) == 0:
-        return 0
-    #Center of the new symbol's vectors
-    pair_mean = get_mean(pair_words, word_vectors)
-    #pdb.set_trace()
-    average_similarity = 0
-
-    for word in pair_words:
-        average_similarity += np.dot(word_vectors[word[0]], pair_mean)
-    
-    #pdb.set_trace()
-    average_similarity = average_similarity/len(pair_words)
-   
-    return average_similarity
-
-
-#Updates the quick_pairs and segmentations data structures for a given word.
 def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, \
     segmentations, freq_changes, all_freqs, update_caches):
+    """
+    Updates the quick_pairs and segmentations data structures for a given word once a new merge has been 
+    decided on. This is a sub-routine called by merge_update, in order to make the logic neater.
+
+    Arguments:
+    vocab -- Dict of (word -> freq).
+    word -- String: word that update is focused on. 
+    pair -- tuple of symbols (bigram) that was merged.
+    new_symbol -- new symbol that was formed by the merge.
+    first_index -- index of the first symbol in word.
+    second_index -- index of the second symbol in word.
+    quick_pairs -- Dict of bigram (as tuple) -> list of words containing that bigram.
+    segmentations -- Dict of word -> list of word parts.
+    freq_changes -- Dict that maps pair -> delta in frequency. Passed in and modified for the caller
+    of this function.
+    all_freqs -- Dict that maps pair -> frequency, for all pairs that currently exist. Passed in and modified
+    for the caller of this function.
+    update_caches -- Boolean that tells use whether to modify freq_changes and all_freqs.
+
+    Returns:
+    None. Function only modifies input data structures.
+    """
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 < len(segmentations[word]):
         quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
@@ -241,6 +284,28 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
 def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold):
+    """
+    Updates the quick_pairs and segmentations data structures for a given word once a new merge has been 
+    decided on. This is a sub-routine called by merge_update, in order to make the logic neater.
+
+    Arguments:
+    vocab -- Dict of (word -> freq).
+    word -- String: word that update is focused on. 
+    pair -- tuple of symbols (bigram) that was merged.
+    new_symbol -- new symbol that was formed by the merge.
+    first_index -- index of the first symbol in word.
+    second_index -- index of the second symbol in word.
+    quick_pairs -- Dict of bigram (as tuple) -> list of words containing that bigram.
+    segmentations -- Dict of word -> list of word parts.
+    freq_changes -- Dict that maps pair -> delta in frequency. Passed in and modified for the caller
+    of this function.
+    all_freqs -- Dict that maps pair -> frequency, for all pairs that currently exist. Passed in and modified
+    for the caller of this function.
+    update_caches -- Boolean that tells use whether to modify freq_changes and all_freqs.
+
+    Returns:
+    None. Function only modifies input data structures.
+    """
     #Helper for decting when the last occurance of a character in a word vanishes
     def remove_word_check(word, in_part):
         for part in segmentations[word]:
@@ -286,28 +351,20 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
     all_freqs.pop(pair)
 
 
-def is_true_tie(pair_choices):
-    for pair in pair_choices:
-        for other_pair in pair_choices:
-            if other_pair != pair and (pair[0] == other_pair[1] or pair[1] ==  other_pair[0]):
-                return True
-    return False
-
-
-def deterministic_hash(data):
-    data = str(data).encode('utf-8')
-    return zlib.adler32(data)
-
-
-def draw_random_pairs():
-    pairs = list(quick_pairs.keys())
-    drawn_indicies = [randint(0, len(pairs) - 1) for i in range(search_scatter)]
-    drawn_pairs = [pairs[i] for i in drawn_indicies]
-    return drawn_pairs
-
-
-#Check the freq_cache and refresh if needed.
 def check_cache(freq_cache, threshold, all_freqs, iter_num):
+    """
+    Check the freq_cache and refresh it if needed.
+
+    Arguments:
+    freq_cache -- Dict of bigram (as tuple) -> frequency, but only for the most frequent bigrams 
+    (speeds up max operation to find most frequent bigram). Potentially modified by this function.
+    threshold -- old frequency threshold that bigrams had to pass to be in the freq_cache.
+    all_freqs -- Dict of bigram (as tuple) -> frequency, but for all bigrams that exist.
+    iter_num -- number of merge operations that we've done.
+
+    Returns:
+    Returns: the new threshold that bigrams must pass to be in the freq_cache.
+    """
     if len(freq_cache) == 0:
         most_frequent = max(all_freqs, key=all_freqs.get)
         new_threshold = all_freqs[most_frequent] * iter_num/(iter_num+10000.0)
@@ -318,22 +375,60 @@ def check_cache(freq_cache, threshold, all_freqs, iter_num):
     
     
 def refresh_freq_cache(freq_cache, new_threshold, all_freqs):
+    """
+    Refresh the freq_cache by searching all_freqs for pairs that are more frequent 
+    than new_threshold.
+
+    Arguments:
+    freq_cache -- Dict of bigram (as tuple) -> frequency, but only for the most frequent bigrams 
+    (speeds up max operation to find most frequent bigram). Potentially modified by this function.
+    threshold -- old frequency threshold that bigrams had to pass to be in the freq_cache.
+    all_freqs -- Dict of bigram (as tuple) -> frequency, but for all bigrams that exist.
+
+    Returns:
+    None. freq_cache is modified in-place.
+    """
     freq_cache.clear()
     for pair in all_freqs:
         if all_freqs[pair] > new_threshold:
             freq_cache[pair] = all_freqs[pair]
 
 
-#Inspired by the BPE Paper code. Remember to cite if needed.
 def draw_frequent_pairs(freq_cache):
+    """
+    Refresh the freq_cache by searching all_freqs for pairs that are more frequent 
+    than new_threshold. Pairs are shuffled in a random order before being returned.
+
+    Arguments:
+    freq_cache -- Dict of bigram (as tuple) -> frequency, but only for the most frequent bigrams 
+    (speeds up max operation to find most frequent bigram). Potentially modified by this function.
+    threshold -- old frequency threshold that bigrams had to pass to be in the freq_cache.
+    all_freqs -- Dict of bigram (as tuple) -> frequency, but for all bigrams that exist.
+
+    Returns:
+    None. freq_cahce is modified in-place.
+    """
     frequent_pair = max(freq_cache, key=freq_cache.get)
     most_frequent_pairs = [p for p in freq_cache if freq_cache[p] == freq_cache[frequent_pair]]
     shuffle(most_frequent_pairs)
     return most_frequent_pairs
 
 
-#Take a list of trained merge operations a apply them to a new vocabulary!
 def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
+    """
+    Take a list of trained merge operations a apply them to a new vocabulary! This isn't part of the 
+    standard BPE pipeline, but can be called by other scripts that to force certain merges.
+
+    Arguments:
+    vocab -- Dict of (word -> freq).
+    merge_operations -- ordered list of bigrams (tuples of two symbols) that should be merged.
+    num_symbols -- how many merge operations to actually perform. Can be less than the number of merge 
+    operations that were passed.
+    use_eol -- whether to use eol symbol when performing segmentation (see Nematus BPE paper).
+
+    Returns:
+    segmentations -- final segmentations for words in vocab using BPE.
+    """
     segmentations = {}
     quick_pairs = defaultdict(lambda: set())
     
@@ -370,6 +465,20 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
 
 #Take segmentations for a corpus and then split the corpus file itself
 def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
+    """
+    Not part of the main BPE pipeline. Takes a corpus file as input, as well as segmentations for the 
+    words in that corpus. Segments the input corpus using the segmentations given.
+
+    Arguments:
+    corpus_path -- path to the corpus to segment.
+    output_path -- path that the segmented corpus should be written to.
+    segmentations -- Dict of word -> list of word parts. There should be a segmentation for 
+    each word in the input corpus.
+    separator -- connector between segments of a word in the segmented corpus.
+
+    Returns:
+    None. Writes a file.
+    """
     corpus_obj = open(corpus_path, "r")
     output_obj = open(output_path, "w+")
     for line in corpus_obj:
@@ -388,7 +497,24 @@ def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     output_obj.close()
 
 
-def segment_vocab(vocab, num_iterations, use_eol=False, valid_freq=None, valid_func=None):   
+def segment_vocab(vocab, num_iterations, use_eol=False, valid_freq=None, valid_func=None): 
+    """
+    The heart and soul of BPE that actually takes an input vocab in and segments it. 
+
+    Arguments:
+    vocab -- Dict of (word -> freq). Usually extracted from corpus file and then passed in.
+    num_iterations -- number of merge operations that should be performed.
+    use_eol -- Whether to use an eol symbol during segmentation (see Nematus BPE paper)
+    valid_freq -- How often segmentations should be evaluated, in terms of iterations.
+    valid_func -- Function that should be used for segmentation evaluation. 
+    (Note that expected form for a validation function is f(segs, op_number))
+
+    Returns:
+    segmentations -- final segmentations for words in vocab using BPE.
+    merges_done -- list of bigrams that were merged (in order) by BPE.
+    val_scores -- ONLY returned if validation function and freq were passed in. Scores for 
+    segmentations, taken every valid_freq number of merge operations.
+    """
     val_scores = []
     segmentations = {}
     

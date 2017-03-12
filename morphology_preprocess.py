@@ -1,7 +1,7 @@
 import json
 import pickle
 from collections import defaultdict
-from bpe import get_vocabulary, get_vocabulary_freq_table, cosine_similarity 
+from bpe import get_vocabulary, get_vocabulary_freq_table 
 import networkx as nx 
 import sys
 import os
@@ -186,6 +186,10 @@ def propogate_to_children(graph, presegs, word, prev_idx, drop_str, kind):
                     propogate_to_children(graph, presegs, child, idx, drop_str, kind)
     except Exception as e:
         pdb.set_trace()
+
+
+def cosine_similarity(vec1, vec2):
+    return np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2))
 
 
 def check_transform_similarity(word, new_string, d_vectors, vocab, word_vectors, threshold):
