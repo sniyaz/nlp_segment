@@ -138,7 +138,7 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
 
     Note:
     If you notice, our hacky way of enforcing these "pre-seg boundaries" is just splitting each word in the vocab into
-    pre-seg components, and then re-combining at the en. 
+    pre-seg components, and then re-combining at the end. 
     """
     segmentations_out = {}
     for word in vocab:
@@ -149,6 +149,7 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
             segmentations_out[word] = final_seg
         else:
             segmentations_out[word] = segmentations_in[word]
+    remove_eols(segmentations_out)
     return segmentations_out
 
 
@@ -165,7 +166,6 @@ def write_segmentation_list(out_name, vocab, segmentations):
     Returns:
     None
     """
-    segmentations = remove_eols(segmentations)
     #Write out the segmentations of each word in the corpus.
     segs_output_obj = open(out_name + "_segs.txt", "w+")
     to_write = list(vocab.keys())

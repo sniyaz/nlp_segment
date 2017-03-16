@@ -20,6 +20,8 @@ if __name__ == '__main__':
     presegs_file = sys.argv[3]
     save_name = sys.argv[4]
     num_iters = int(sys.argv[5])
+    #Bit for using eol stuff.
+    use_eol = int(sys.argv[6])
 
     #Load in presegs.
     presegs = open(presegs_file, "rb")
@@ -34,7 +36,7 @@ if __name__ == '__main__':
     training_preseg_vocab = apply_presegs(training_vocab, presegs)
 
     #Train BPE
-    _, merge_operations = segment_vocab(training_preseg_vocab, num_iters)
+    _, merge_operations = segment_vocab(training_preseg_vocab, num_iters, use_eol=use_eol)
 
     #pdb.set_trace()  
 
@@ -47,7 +49,7 @@ if __name__ == '__main__':
     val_preseg_vocab = apply_presegs(val_vocab, presegs)
    
     #Apply trained BPE operations to validation corpora
-    val_intermediate_seg = apply_merge_ops(val_preseg_vocab, merge_operations)
+    val_intermediate_seg = apply_merge_ops(val_preseg_vocab, merge_operations, use_eol=use_eol)
 
     #Recover final segmentations of validation corpora and write them out.
     final_val_seg = recover_preseg_boundary(val_vocab, presegs, val_intermediate_seg)
