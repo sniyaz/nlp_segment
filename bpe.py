@@ -99,6 +99,24 @@ def get_vocabulary_freq_table(fobj, word_vectors):
     return vocab
 
 
+def extract_boundaries(vocab, presegs):
+    """
+    TODO
+    """
+    boundaries = defaultdict(lambda: set())
+    for word in presegs:
+        if word in vocab and len(presegs[word]) > 1:
+            cur_parts = presegs[word][:-1]
+            chars_seen = 0
+            for part in cur_parts:
+                first_index = chars_seen + len(part) - 1
+                second_index = first_index + 1
+                boundaries[word].add((first_index, second_index))
+                chars_seen += len(part)
+
+    return vocab
+
+
 def apply_presegs(vocab, presegs):
     """
     Applies pre-segmentations to a given vocab. Non-destructive method.
