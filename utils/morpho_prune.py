@@ -11,8 +11,6 @@ import pdb
 """Take the final segmented training corpora for baseline and morpho and prune out lines greater than 
 a length consistantly (for fairness in translation experiment."""
 
-#TODO: Make thi operate on seq length!
-
 def seq_len(input_line):
     input_line = input_line.strip()
     line_parts = input_line.split()

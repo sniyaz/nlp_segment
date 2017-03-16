@@ -1,3 +1,8 @@
+"""
+Uses the pre-segmentation and BPE alorithms to break up parallel training corpora and validation corpora.
+Write out segmented versions for all 4 passed corpora (2 training, 2 validation).
+"""
+
 import sys
 import pickle
 import os
@@ -78,12 +83,12 @@ if __name__ == '__main__':
     target_validation_preseg = apply_presegs(target_validation_vocab, target_presegs)
    
     #Apply trained BPE operations to validation corpora
-    src_val_inter_seg = apply_merge_ops(src_validation_preseg, merge_operations)
-    target_val_inter_seg = apply_merge_ops(target_validation_preseg, merge_operations)
+    src_val_intermediate_seg = apply_merge_ops(src_validation_preseg, merge_operations)
+    target_val_intermediate_seg = apply_merge_ops(target_validation_preseg, merge_operations)
 
     #Recover final segmentations of validation corpora and write them out.
-    final_src_val_seg = recover_preseg_boundary(src_validation_vocab, src_presegs, src_val_inter_seg)
-    final_target_val_seg = recover_preseg_boundary(target_validation_vocab, target_presegs, target_val_inter_seg)
+    final_src_val_seg = recover_preseg_boundary(src_validation_vocab, src_presegs, src_val_intermediate_seg)
+    final_target_val_seg = recover_preseg_boundary(target_validation_vocab, target_presegs, target_val_intermediate_seg)
 
     src_val_output = validation_prefix + ".bpe_morph." + src
     delimit_corpus(src_validation_file, src_val_output, final_src_val_seg)  

@@ -9,6 +9,7 @@ from bpe import get_vocabulary, get_vocabulary_freq_table
 import networkx as nx 
 import sys
 import os
+import numpy as np
 
 sys.path.append("./evaluation/")
 from evaluate_seg import get_gs_data
