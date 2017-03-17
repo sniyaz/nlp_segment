@@ -6,7 +6,7 @@ POS tagging task.
 import sys
 import pickle
 import os
-from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary 
+from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, extract_boundaries
 from copy import deepcopy
 from collections import Counter
 
