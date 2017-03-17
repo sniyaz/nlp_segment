@@ -167,7 +167,6 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
             segmentations_out[word] = final_seg
         else:
             segmentations_out[word] = segmentations_in[word]
-    remove_eols(segmentations_out)
     return segmentations_out
 
 

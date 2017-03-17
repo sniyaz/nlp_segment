@@ -169,11 +169,18 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, th
         if possible_change:
             change_kind, drop_str, parent_word = possible_change
             if change_kind == "s":
-                presegs[word] = [word[:-len(drop_str)], drop_str]
+                if spell_change_mode:
+                    presegs[word] = [parent_word, drop_str]
+                else:
+                    presegs[word] = [word[:-len(drop_str)], drop_str]
                 propogation_graph.add_edge(parent_word, word, link= [0])
             else:
-                presegs[word] = [drop_str, word[len(drop_str):]]
+                if spell_change_mode:
+                    presegs[word] = [drop_str, parent_word]
+                else:
+                    presegs[word] = [drop_str, word[len(drop_str):]]
                 propogation_graph.add_edge(parent_word, word, link = [1])
+
             print(presegs[word])
 
             #Core of the propogation algorithm!
@@ -312,11 +319,13 @@ if __name__ == '__main__':
     use_propogation = int(sys.argv[4])
     #Bit for if we are doing toy seg_eval experiment
     seg_eval = int(sys.argv[5])
+    #Bit if we want to undo spelling changes in segmentations.
+    spell_change_mode = int(sys.argv[6])
 
-    threshold = float(sys.argv[6])
-    k = int(sys.argv[7])
+    threshold = float(sys.argv[7])
+    k = int(sys.argv[8])
 
-    save_dir = sys.argv[8]
+    save_dir = sys.argv[9]
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
     json_contents = json.load(open(transforms_file, "r"))
