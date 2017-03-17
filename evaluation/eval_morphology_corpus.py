@@ -12,7 +12,7 @@ from collections import defaultdict, Counter
 
 from evaluate_seg import get_gs_data, call_evaluation, extract_fmeasure, get_merge_ops_list
 sys.path.append("../")
-from bpe import get_vocabulary, apply_presegs, recover_preseg_boundary, apply_merge_ops, segment_vocab, extract_boundaries
+from bpe import get_vocabulary, apply_presegs, recover_preseg_boundary, apply_merge_ops, segment_vocab
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -64,8 +64,7 @@ def morpho_valid_func(morpho_segs, op_number):
     morph_folder = os.path.join(save_folder, "morph_folder")
     os.makedirs(morph_folder)
     morph_eval_file = os.path.join(morph_folder, "eval_output.txt")
-    #TODO: TAKE OUUUUTTT
-    #morpho_segs = recover_preseg_boundary(vocab, presegs, morpho_segs)
+    morpho_segs = recover_preseg_boundary(vocab, presegs, morpho_segs)
     morph_fmeasure = call_evaluation(morpho_segs, eval_order, gold_standard_file, result_dir=morph_folder)
     return morph_fmeasure
 
@@ -100,7 +99,7 @@ if __name__ == '__main__':
 
     parser = create_parser()
     args = parser.parse_args()
-    max_merges = 1000
+    max_merges = 50000
     granularity = 500
 
     #Extract the gold standard- we'll use it later.
@@ -112,15 +111,10 @@ if __name__ == '__main__':
     presegs = pickle.load(args.pre_segs)
  
     vocab = get_vocabulary(args.corpus) 
-    # preseg_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
+    preseg_vocab = apply_presegs(copy.deepcopy(vocab), presegs)
 
-    # _, __, bpe_scores = segment_vocab(vocab, max_merges, valid_freq=granularity, valid_func=base_valid_func)
-    # _, __, morph_scores= segment_vocab(preseg_vocab, max_merges, valid_freq=granularity, valid_func=morpho_valid_func)
-
-    #BOUNDARY BASED APPROACH!
-    boundaries = extract_boundaries(vocab, presegs)
     _, __, bpe_scores = segment_vocab(vocab, max_merges, valid_freq=granularity, valid_func=base_valid_func)
-    _, __, morph_scores= segment_vocab(vocab, max_merges, valid_freq=granularity, valid_func=morpho_valid_func, boundaries=boundaries)
+    _, __, morph_scores= segment_vocab(preseg_vocab, max_merges, valid_freq=granularity, valid_func=morpho_valid_func)
 
     num_symbols = list(range(0, max_merges + 1, granularity))
 
