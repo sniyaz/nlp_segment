@@ -100,8 +100,8 @@ if __name__ == '__main__':
 
     parser = create_parser()
     args = parser.parse_args()
-    max_merges = 1000
-    granularity = 500
+    max_merges = 100
+    granularity = 100
 
     #Extract the gold standard- we'll use it later.
     gold_standard = {}
@@ -119,8 +119,8 @@ if __name__ == '__main__':
 
     #BOUNDARY BASED APPROACH!
     boundaries = extract_boundaries(vocab, presegs)
-    _, __, bpe_scores = segment_vocab(vocab, max_merges, valid_freq=granularity, valid_func=base_valid_func)
-    _, __, morph_scores= segment_vocab(vocab, max_merges, valid_freq=granularity, valid_func=morpho_valid_func, boundaries=boundaries)
+    _, __, bpe_scores = segment_vocab(copy.deepcopy(vocab), max_merges, valid_freq=granularity, valid_func=base_valid_func)
+    _, __, morph_scores= segment_vocab(copy.deepcopy(vocab), max_merges, valid_freq=granularity, valid_func=morpho_valid_func, boundaries=boundaries)
 
     num_symbols = list(range(0, max_merges + 1, granularity))
 

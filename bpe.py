@@ -114,7 +114,7 @@ def extract_boundaries(vocab, presegs):
                 boundaries[word].add((first_index, second_index))
                 chars_seen += len(part)
 
-    return vocab
+    return boundaries
 
 
 def apply_presegs(vocab, presegs):
@@ -271,10 +271,6 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
         return True
 
     #If this segmentation is blocked, abort.
-    #TODO: REMOVE THIS HACKERY
-    if boundaries:
-        pdb.set_trace()
-
     if boundaries and ((first_index, second_index) in boundaries[word]):
         return
 
@@ -324,9 +320,9 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
 
-    if boundaries and (i + 1 , i + 2) in boundaries[word]:
-        boundaries[word].remove((i + 1 , i + 2))
-        boundaries[word].add((i, i + 1))
+        if boundaries and (i + 1 , i + 2) in boundaries[word]:
+            boundaries[word].remove((i + 1 , i + 2))
+            boundaries[word].add((i, i + 1))
         
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
@@ -354,7 +350,7 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
     None. Function only modifies input data structures.
     """
     new_symbol = "".join(pair)
-    involved_words = quick_pairs[pair]
+    involved_words = copy.deepcopy(quick_pairs[pair])
 
     #Book keeping if doing BPE tie breaking..
     freq_changes = Counter()
@@ -376,7 +372,6 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
         freq_cache.pop(pair)
 
     #One last thing now that we're done...
-    quick_pairs.pop(pair)
     all_freqs.pop(pair)
 
 
@@ -484,13 +479,12 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False, bo
         new_symbol = "".join(pair)
         #Some of the pairs aren't relevant to the evaluations set...
         if pair in quick_pairs:
-            involved_words = quick_pairs[pair]
+            involved_words = copy.deepcopy(quick_pairs[pair])
 
             while involved_words:
                 word, first_index, second_index = involved_words.pop()
                 #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
                 core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, Counter(), Counter(), False, boundaries=boundaries)  
-            quick_pairs.pop(pair)
             
     return segmentations
 
