@@ -167,6 +167,7 @@ def recover_preseg_boundary(vocab, presegs, segmentations_in):
             segmentations_out[word] = final_seg
         else:
             segmentations_out[word] = segmentations_in[word]
+    remove_eols(segmentations_out)
     return segmentations_out
 
 
@@ -239,68 +240,7 @@ def get_pair_statistics(vocab, segmentations):
     
 
 def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, \
-    segmentations, freq_changes, all_freqs, update_caches):
-    """
-    Updates the quick_pairs and segmentations data structures for a given word once a new merge has been 
-    decided on. This is a sub-routine called by merge_update, in order to make the logic neater.
-
-    Arguments:
-    vocab -- Dict of (word -> freq).
-    word -- String: word that update is focused on. 
-    pair -- tuple of symbols (bigram) that was merged.
-    new_symbol -- new symbol that was formed by the merge.
-    first_index -- index of the first symbol in word.
-    second_index -- index of the second symbol in word.
-    quick_pairs -- Dict of bigram (as tuple) -> list of words containing that bigram.
-    segmentations -- Dict of word -> list of word parts.
-    freq_changes -- Dict that maps pair -> delta in frequency. Passed in and modified for the caller
-    of this function.
-    all_freqs -- Dict that maps pair -> frequency, for all pairs that currently exist. Passed in and modified
-    for the caller of this function.
-    update_caches -- Boolean that tells use whether to modify freq_changes and all_freqs.
-
-    Returns:
-    None. Function only modifies input data structures.
-    """
-    #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
-    if second_index + 1 < len(segmentations[word]):
-        quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
-        if update_caches:
-            all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
-            freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
-
-    if first_index - 1 >= 0: 
-        quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
-        if update_caches:
-            all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
-            freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
-
-    
-    #Update segmentations data structure 
-    segmentations[word][first_index] = new_symbol
-    segmentations[word].pop(second_index)
-
-    #Update the pairs data structure with new pairs formed with new symbol 
-    if second_index < len(segmentations[word]):
-        quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
-        if update_caches:
-            all_freqs[(new_symbol, segmentations[word][second_index])] += vocab[word]
-            freq_changes[(new_symbol, segmentations[word][second_index])] += vocab[word]
-        
-    if first_index - 1 >= 0:
-        quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
-        if update_caches: 
-            all_freqs[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
-            freq_changes[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
-    
-    #Now, move the indicies for things after the merged pair!
-    for i in range(second_index, len(segmentations[word]) - 1):
-        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
-        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
-        
-
-#MASSIVE monster of a function that updates all data structures after a merge operation...
-def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold):
+    quick_find, segmentations, freq_changes, all_freqs, update_caches, boundaries=None):
     """
     Updates the quick_pairs and segmentations data structures for a given word once a new merge has been 
     decided on. This is a sub-routine called by merge_update, in order to make the logic neater.
@@ -330,6 +270,89 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
                 return False
         return True
 
+    #If this segmentation is blocked, abort.
+    #TODO: REMOVE THIS HACKERY
+    if boundaries:
+        pdb.set_trace()
+
+    if boundaries and ((first_index, second_index) in boundaries[word]):
+        return
+
+    #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
+    if second_index + 1 < len(segmentations[word]):
+        quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+        if update_caches:
+            all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
+            freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
+
+    if first_index - 1 >= 0: 
+        quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+        if update_caches:
+            all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
+            freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
+
+
+    #Update segmentations data structure:
+    segmentations[word][first_index] = new_symbol
+    segmentations[word].pop(second_index)
+    
+    #Remove the mapping of the word and old symbols from the quick_find structure
+    if remove_word_check(word, pair[0]):
+        quick_find[pair[0]].remove((word,))
+    if remove_word_check(word, pair[1]):
+        #New edge case in situations like "l" + "l"
+        if pair[0] != pair[1]:
+            quick_find[pair[1]].remove((word,))
+    #Update q_find data structure with new symbol
+    quick_find[new_symbol].add((word,))
+
+    #Update the pairs data structure with new pairs formed with new symbol 
+    if second_index < len(segmentations[word]):
+        quick_pairs[(new_symbol, segmentations[word][second_index])].add((word, first_index, second_index))
+        if update_caches:
+            all_freqs[(new_symbol, segmentations[word][second_index])] += vocab[word]
+            freq_changes[(new_symbol, segmentations[word][second_index])] += vocab[word]
+        
+    if first_index - 1 >= 0:
+        quick_pairs[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
+        if update_caches: 
+            all_freqs[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
+            freq_changes[(segmentations[word][first_index - 1], new_symbol)] += vocab[word]
+    
+    #Now, move the indicies for things after the merged pair!
+    for i in range(second_index, len(segmentations[word]) - 1):
+        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+        quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
+
+    if boundaries and (i + 1 , i + 2) in boundaries[word]:
+        boundaries[word].remove((i + 1 , i + 2))
+        boundaries[word].add((i, i + 1))
+        
+
+#MASSIVE monster of a function that updates all data structures after a merge operation...
+def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold, boundaries=None):
+    """
+    Updates the quick_pairs and segmentations data structures for a given word once a new merge has been 
+    decided on. This is a sub-routine called by merge_update, in order to make the logic neater.
+
+    Arguments:
+    vocab -- Dict of (word -> freq).
+    word -- String: word that update is focused on. 
+    pair -- tuple of symbols (bigram) that was merged.
+    new_symbol -- new symbol that was formed by the merge.
+    first_index -- index of the first symbol in word.
+    second_index -- index of the second symbol in word.
+    quick_pairs -- Dict of bigram (as tuple) -> list of words containing that bigram.
+    segmentations -- Dict of word -> list of word parts.
+    freq_changes -- Dict that maps pair -> delta in frequency. Passed in and modified for the caller
+    of this function.
+    all_freqs -- Dict that maps pair -> frequency, for all pairs that currently exist. Passed in and modified
+    for the caller of this function.
+    update_caches -- Boolean that tells use whether to modify freq_changes and all_freqs.
+
+    Returns:
+    None. Function only modifies input data structures.
+    """
     new_symbol = "".join(pair)
     involved_words = quick_pairs[pair]
 
@@ -338,18 +361,7 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
     #Edge cases can have you change the set as you iterate over it!
     while involved_words:
         word, first_index, second_index = involved_words.pop()
-
-        core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, freq_changes, all_freqs, True)
-
-        #Remove the mapping of the word and old symbols from the quick_find structure
-        if remove_word_check(word, pair[0]):
-            quick_find[pair[0]].remove((word,))
-        if remove_word_check(word, pair[1]):
-            #New edge case in situations like "l" + "l"
-            if pair[0] != pair[1]:
-                quick_find[pair[1]].remove((word,))
-        #Update q_find data structure with new symbol
-        quick_find[new_symbol].add((word,))
+        core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, freq_changes, all_freqs, True, boundaries=boundaries)
         
     #Now we have to clean up the frequencey cache...
     for changed_pair in freq_changes:
@@ -431,7 +443,7 @@ def draw_frequent_pairs(freq_cache):
     return most_frequent_pairs
 
 
-def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
+def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False, boundaries=None):
     """
     Take a list of trained merge operations a apply them to a new vocabulary! This isn't part of the 
     standard BPE pipeline, but can be called by other scripts that to force certain merges.
@@ -448,6 +460,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
     """
     segmentations = {}
     quick_pairs = defaultdict(lambda: set())
+    quick_find = defaultdict(lambda: set())
     
     for word in vocab:
         #Set up segmentations data structure
@@ -457,6 +470,8 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
         segmentations[word] = seg
         #Set up the quick_find data structure
         for idx, c in enumerate(seg):
+            quick_find[c].add((word,))
+
             #Now set up the quick_pairs data structure
             if idx != len(seg) - 1:
                 quick_pairs[(c, seg[idx+1])].add((word, idx, idx+1))
@@ -474,7 +489,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
             while involved_words:
                 word, first_index, second_index = involved_words.pop()
                 #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
-                core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, segmentations, Counter(), Counter(), False)
+                core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, Counter(), Counter(), False, boundaries=boundaries)  
             quick_pairs.pop(pair)
             
     return segmentations
@@ -514,7 +529,7 @@ def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     output_obj.close()
 
 
-def segment_vocab(vocab, num_iterations, use_eol=False, valid_freq=None, valid_func=None): 
+def segment_vocab(vocab, num_iterations, use_eol=False, valid_freq=None, valid_func=None, boundaries=None): 
     """
     The heart and soul of BPE that actually takes an input vocab in and segments it. 
 
@@ -580,7 +595,7 @@ def segment_vocab(vocab, num_iterations, use_eol=False, valid_freq=None, valid_f
 
         sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, best_pair[0], best_pair[1], freq_cache[best_pair]))                           
         
-        merge_update(vocab, best_pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold)
+        merge_update(vocab, best_pair, quick_pairs, quick_find, segmentations, freq_cache, all_freqs, threshold, boundaries=boundaries)
         merges_done.append(best_pair)
 
     if valid_freq != None:

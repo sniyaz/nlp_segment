@@ -6,7 +6,7 @@ POS tagging task.
 import sys
 import pickle
 import os
-from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, remove_eols
+from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, extract_boundaries
 from copy import deepcopy
 from collections import Counter
 
@@ -50,16 +50,9 @@ if __name__ == '__main__':
    
     #Apply trained BPE operations to validation corpora
     val_intermediate_seg = apply_merge_ops(val_preseg_vocab, merge_operations, use_eol=use_eol)
-    if use_eol:
-        remove_eols(val_intermediate_seg)
 
     #Recover final segmentations of validation corpora and write them out.
     final_val_seg = recover_preseg_boundary(val_vocab, presegs, val_intermediate_seg)
     delimit_corpus(val_file, save_name, final_val_seg)
-
-    #Pickle out segmentation dict
-    seg_dict_path = save_name + ".seg_dict"
-    with open(seg_dict_path, "wb+") as seg_file:
-        pickle.dump(final_val_seg, seg_file)
 
      
