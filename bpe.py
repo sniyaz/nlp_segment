@@ -106,12 +106,15 @@ def extract_boundaries(vocab, presegs):
     boundaries = defaultdict(lambda: set())
     for word in presegs:
         if word in vocab and len(presegs[word]) > 1:
-            cur_parts = presegs[word][:-1]
             chars_seen = 0
-            for part in cur_parts:
+            for i in range(len(presegs[word]) - 1):
+                part = presegs[word][i]
+                next_part = presegs[word][i+1]
+                pair = (part[-1], next_part[0])
+
                 first_index = chars_seen + len(part) - 1
                 second_index = first_index + 1
-                boundaries[word].add((first_index, second_index))
+                boundaries[pair].add((word, first_index, second_index))
                 chars_seen += len(part)
 
     return boundaries
@@ -270,10 +273,6 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
                 return False
         return True
 
-    #If this segmentation is blocked, abort.
-    if boundaries and ((first_index, second_index) in boundaries[word]):
-        return
-
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 < len(segmentations[word]):
         quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
@@ -320,9 +319,9 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
 
-        if boundaries and (i + 1 , i + 2) in boundaries[word]:
-            boundaries[word].remove((i + 1 , i + 2))
-            boundaries[word].add((i, i + 1))
+        if boundaries and (word, i + 1 , i + 2) in boundaries[pair]:
+            boundaries[pair].remove((word, i + 1 , i + 2))
+            boundaries[pair].add((word, i, i + 1))
         
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
@@ -350,14 +349,23 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
     None. Function only modifies input data structures.
     """
     new_symbol = "".join(pair)
-    involved_words = copy.deepcopy(quick_pairs[pair])
+    involved_words = quick_pairs[pair]
 
     #Book keeping if doing BPE tie breaking..
     freq_changes = Counter()
+    #Overhead for blocking merges from pre-segmentations.
+    if boundaries:
+        num_blocked = len(boundaries[pair])
+    else:
+        num_blocked = 0
     #Edge cases can have you change the set as you iterate over it!
-    while involved_words:
+    while len(involved_words) > num_blocked:
         word, first_index, second_index = involved_words.pop()
-        core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, freq_changes, all_freqs, True, boundaries=boundaries)
+        #Is a merge operation blocked?
+        if boundaries and (word, first_index, second_index) in boundaries[pair]:
+            involved_words.add((word, first_index, second_index))
+        else:
+            core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, freq_changes, all_freqs, True, boundaries=boundaries)
         
     #Now we have to clean up the frequencey cache...
     for changed_pair in freq_changes:
@@ -479,7 +487,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False, bo
         new_symbol = "".join(pair)
         #Some of the pairs aren't relevant to the evaluations set...
         if pair in quick_pairs:
-            involved_words = copy.deepcopy(quick_pairs[pair])
+            involved_words = quick_pairs[pair]
 
             while involved_words:
                 word, first_index, second_index = involved_words.pop()
