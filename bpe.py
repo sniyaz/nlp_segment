@@ -276,12 +276,16 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
     #Delete old info from the pairs data structure (from pairs on a boundary with the new symbol) 
     if second_index + 1 < len(segmentations[word]):
         quick_pairs[(pair[1], segmentations[word][second_index + 1])].remove((word, second_index, second_index + 1))
+        if boundaries and (word, second_index, second_index + 1) in boundaries[(pair[1], segmentations[word][second_index + 1])]:
+            boundaries[(new_symbol, segmentations[word][second_index + 1])].add((word, first_index, second_index))        
         if update_caches:
             all_freqs[(pair[1], segmentations[word][second_index + 1])] -= vocab[word]
             freq_changes[(pair[1], segmentations[word][second_index + 1])] = all_freqs[(pair[1], segmentations[word][second_index + 1])]
 
     if first_index - 1 >= 0: 
         quick_pairs[(segmentations[word][first_index - 1], pair[0])].remove((word, first_index - 1, first_index))
+        if boundaries and (word, first_index - 1, first_index) in boundaries[(segmentations[word][first_index - 1], pair[0])]:
+            boundaries[(segmentations[word][first_index -1], new_symbol)].add((word, first_index - 1 , first_index))
         if update_caches:
             all_freqs[(segmentations[word][first_index - 1], pair[0])] -= vocab[word]
             freq_changes[(segmentations[word][first_index - 1], pair[0])] = all_freqs[(segmentations[word][first_index - 1], pair[0])]
@@ -319,9 +323,9 @@ def core_word_update(vocab, word, pair, new_symbol, first_index, second_index, q
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
         quick_pairs[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
 
-        if boundaries and (word, i + 1 , i + 2) in boundaries[pair]:
-            boundaries[pair].remove((word, i + 1 , i + 2))
-            boundaries[pair].add((word, i, i + 1))
+        if boundaries and (word, i + 1 , i + 2) in boundaries[(segmentations[word][i], segmentations[word][i+1])]:
+            boundaries[(segmentations[word][i], segmentations[word][i+1])].remove((word, i + 1 , i + 2))
+            boundaries[(segmentations[word][i], segmentations[word][i+1])].add((word, i , i + 1))
         
 
 #MASSIVE monster of a function that updates all data structures after a merge operation...
@@ -361,6 +365,12 @@ def merge_update(vocab, pair, quick_pairs, quick_find, segmentations, freq_cache
     #Edge cases can have you change the set as you iterate over it!
     while len(involved_words) > num_blocked:
         word, first_index, second_index = involved_words.pop()
+
+        #TODO: REMOVE THIS hack
+        # if word == "balking":
+        #     pdb.set_trace()
+
+
         #Is a merge operation blocked?
         if boundaries and (word, first_index, second_index) in boundaries[pair]:
             involved_words.add((word, first_index, second_index))
