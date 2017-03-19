@@ -498,11 +498,20 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False, bo
         #Some of the pairs aren't relevant to the evaluations set...
         if pair in quick_pairs:
             involved_words = quick_pairs[pair]
+            #Overhead for blocking merges from pre-segmentations.
+            if boundaries:
+                num_blocked = len(boundaries[pair])
+            else:
+                num_blocked = 0
 
-            while involved_words:
+            #Edge cases can have you change the set as you iterate over it!
+            while len(involved_words) > num_blocked:
                 word, first_index, second_index = involved_words.pop()
-                #Call this with throw away dicts for the frequencey cache and all_freqs. Not relevant here at all.
-                core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, Counter(), Counter(), False, boundaries=boundaries)  
+                #Is a merge operation blocked?
+                if boundaries and (word, first_index, second_index) in boundaries[pair]:
+                    involved_words.add((word, first_index, second_index))
+                else:
+                    core_word_update(vocab, word, pair, new_symbol, first_index, second_index, quick_pairs, quick_find, segmentations, Counter(), Counter(), False, boundaries=boundaries)
             
     return segmentations
 

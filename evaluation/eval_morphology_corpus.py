@@ -100,8 +100,8 @@ if __name__ == '__main__':
 
     parser = create_parser()
     args = parser.parse_args()
-    max_merges = 100
-    granularity = 100
+    max_merges = 50000
+    granularity = 500
 
     #Extract the gold standard- we'll use it later.
     gold_standard = {}

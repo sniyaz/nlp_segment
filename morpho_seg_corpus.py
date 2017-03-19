@@ -6,7 +6,7 @@ POS tagging task.
 import sys
 import pickle
 import os
-from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, extract_boundaries
+from bpe import apply_merge_ops, delimit_corpus, get_vocabulary, apply_presegs, segment_vocab, recover_preseg_boundary, extract_boundaries, remove_eols
 from copy import deepcopy
 from collections import Counter
 
@@ -33,26 +33,26 @@ if __name__ == '__main__':
     training_obj = open(training_file, "r")
     training_vocab = get_vocabulary(training_obj)
     training_obj.close()
-    training_preseg_vocab = apply_presegs(training_vocab, presegs)
 
     #Train BPE
-    _, merge_operations = segment_vocab(training_preseg_vocab, num_iters, use_eol=use_eol)
+    _, merge_operations = segment_vocab(training_vocab, num_iters, use_eol=use_eol)
 
     #pdb.set_trace()  
 
     #PHASE 2: THE VALIDATION CORPORA
 
     #Apply the presegs to the validation corpora
+    
     val_obj = open(val_file, "r")
     val_vocab = get_vocabulary(val_obj)
     val_obj.close()
-    val_preseg_vocab = apply_presegs(val_vocab, presegs)
-   
+
+    boundaries = extract_boundaries(val_vocab, presegs)
     #Apply trained BPE operations to validation corpora
-    val_intermediate_seg = apply_merge_ops(val_preseg_vocab, merge_operations, use_eol=use_eol)
+    val_seg = apply_merge_ops(val_vocab, merge_operations, use_eol=use_eol, boundaries=boundaries)
 
     #Recover final segmentations of validation corpora and write them out.
-    final_val_seg = recover_preseg_boundary(val_vocab, presegs, val_intermediate_seg)
-    delimit_corpus(val_file, save_name, final_val_seg)
+    remove_eols(val_seg)
+    delimit_corpus(val_file, save_name, val_seg)
 
      
