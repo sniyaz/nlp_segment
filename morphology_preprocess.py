@@ -186,11 +186,8 @@ def compute_preseg(vocabulary, word_vectors, morph_transforms, test_set=None, th
             #Core of the propogation algorithm!
             if use_propogation:
                 propogate_to_children(propogation_graph, presegs, word, 0, drop_str, change_kind)
-
-            if seg_eval:
-                target_words.append(parent_word)
               
-        i += 1 
+        i += 1
        
     #DEBUG
     to_write = sorted(list(presegs.keys()))
@@ -317,38 +314,22 @@ if __name__ == '__main__':
     transforms_file = sys.argv[3] 
     #Bit that sets whether or not to use propagation algo.
     use_propogation = int(sys.argv[4])
-    #Bit for if we are doing toy seg_eval experiment
-    seg_eval = int(sys.argv[5])
     #Bit if we want to undo spelling changes in segmentations.
-    spell_change_mode = int(sys.argv[6])
+    spell_change_mode = int(sys.argv[5])
 
-    threshold = float(sys.argv[7])
-    k = int(sys.argv[8])
+    threshold = float(sys.argv[6])
+    k = int(sys.argv[7])
 
-    save_dir = sys.argv[9]
+    save_dir = sys.argv[8]
 
     word_vectors = pickle.load(open(vectors_file, "rb"))
     json_contents = json.load(open(transforms_file, "r"))
 
-    if seg_eval:
-        #If prepping short "toy" experiment
-        corpus_file = os.path.join(data_directory, "pure_corpus.txt")
-        vocab = get_vocabulary_freq_table(open(corpus_file, "r"), word_vectors)  
-        
-        #If prepping short experiment
-        gold_standard = {}
-        eval_order = []
-        gs_file = os.path.join(data_directory, "gs_corpus_only.txt")
-        get_gs_data(open(gs_file, "r"), gold_standard, eval_order) 
-
-        test_set = list(gold_standard.keys())
-
-    else:
-        vocab = get_vocabulary(open(data_directory, "r"))
-        test_set = list(vocab.keys())
-        #Use Hyperparamter 2 (that blocks presegs on words above a certain freq.)
-        test_set = sorted(test_set, key = lambda x: vocab[x], reverse=True)
-        test_set = test_set[k:]
+    vocab = get_vocabulary(open(data_directory, "r"))
+    test_set = list(vocab.keys())
+    #Use Hyperparamter 2 (that blocks presegs on words above a certain freq.)
+    test_set = sorted(test_set, key = lambda x: vocab[x], reverse=True)
+    test_set = test_set[k:]
        
     morph_transforms = process_json(json_contents, vocab, word_vectors)   
     compute_preseg(vocab, word_vectors, morph_transforms, test_set=test_set, threshold=threshold)

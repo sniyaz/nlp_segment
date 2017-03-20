@@ -59,7 +59,7 @@ def create_parser():
     return parser
 
 
-def get_vocabulary(fobj):
+def get_vocabulary(fobj, ignore_case=False):
     """
     Returns the vocab dictionary (map of word -> freq) from an object file.
 
@@ -71,6 +71,8 @@ def get_vocabulary(fobj):
     for line in fobj:
         line = line.strip()
         for word in line.split():
+            if ignore_case:
+                word = word.lower()
             vocab[word] += 1
 
     return vocab
@@ -481,7 +483,7 @@ def apply_merge_ops(vocab, merge_operations, num_symbols=None, use_eol=False):
 
 
 #Take segmentations for a corpus and then split the corpus file itself
-def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
+def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@", restore_case=False):
     """
     Not part of the main BPE pipeline. Takes a corpus file as input, as well as segmentations for the 
     words in that corpus. Segments the input corpus using the segmentations given.
@@ -501,10 +503,21 @@ def delimit_corpus(corpus_path, output_path, segmentations, separator ="@@"):
     for line in corpus_obj:
         parsed_contents = []
         for word in line.split():
-            word_seg = segmentations[word]
-            for part in word_seg[:-1]:
+            if restore_case:
+                word_seg = segmentations[word.lower()]
+            else:
+                word_seg = segmentations[word]
+            for i in range(len(word_seg) - 1):
+                part = word_seg[i]
+                #Need to "correct" the case of the word if it was ignored earlier in segmentation.
+                if restore_case and i == 0 and word[0].isupper():
+                    part = part[:1].upper() + part[1:]
                 parsed_contents.append(part + separator)
-            parsed_contents.append(word_seg[-1])
+            last_part = word_seg[-1]
+            #Correction if only one part exists:
+            if restore_case and len(word_seg) == 1 and word[0].isupper():
+                last_part = last_part[:1].upper() + last_part[1:]
+            parsed_contents.append(last_part)
 
         parsed_line = " ".join(parsed_contents)
         output_obj.write(parsed_line.strip())

@@ -21,7 +21,7 @@ if __name__ == '__main__':
     save_name = sys.argv[4]
     num_iters = int(sys.argv[5])
     #Bit for using eol stuff.
-    use_eol = int(sys.argv[6])
+    ignore_case = int(sys.argv[6])
 
     #Load in presegs.
     presegs = open(presegs_file, "rb")
@@ -31,12 +31,12 @@ if __name__ == '__main__':
     
     #Apply the presegs to the training corpora
     training_obj = open(training_file, "r")
-    training_vocab = get_vocabulary(training_obj)
+    training_vocab = get_vocabulary(training_obj, ignore_case=ignore_case)
     training_obj.close()
     training_preseg_vocab = apply_presegs(training_vocab, presegs)
 
     #Train BPE
-    _, merge_operations = segment_vocab(training_preseg_vocab, num_iters, use_eol=use_eol)
+    _, merge_operations = segment_vocab(training_preseg_vocab, num_iters)
 
     #pdb.set_trace()  
 
@@ -44,22 +44,15 @@ if __name__ == '__main__':
 
     #Apply the presegs to the validation corpora
     val_obj = open(val_file, "r")
-    val_vocab = get_vocabulary(val_obj)
+    val_vocab = get_vocabulary(val_obj, ignore_case=ignore_case)
     val_obj.close()
     val_preseg_vocab = apply_presegs(val_vocab, presegs)
    
     #Apply trained BPE operations to validation corpora
-    val_intermediate_seg = apply_merge_ops(val_preseg_vocab, merge_operations, use_eol=use_eol)
-    if use_eol:
-        remove_eols(val_intermediate_seg)
+    val_intermediate_seg = apply_merge_ops(val_preseg_vocab, merge_operations)
 
     #Recover final segmentations of validation corpora and write them out.
     final_val_seg = recover_preseg_boundary(val_vocab, presegs, val_intermediate_seg)
-    delimit_corpus(val_file, save_name, final_val_seg)
-
-    #Pickle out segmentation dict
-    seg_dict_path = save_name + ".seg_dict"
-    with open(seg_dict_path, "wb+") as seg_file:
-        pickle.dump(final_val_seg, seg_file)
+    delimit_corpus(val_file, save_name, final_val_seg, restore_case=ignore_case)
 
      
